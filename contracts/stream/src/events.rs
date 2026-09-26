@@ -47,3 +47,12 @@ pub fn rate_updated(env: &Env, stream_id: u64, old_rate: i128, new_rate: i128) {
         (old_rate, new_rate),
     );
 }
+
+/// Emitted after a withdraw when the stream's remaining deposit falls below
+/// its `low_balance_threshold`, so off-chain systems can alert the employer.
+pub fn low_balance(env: &Env, id: u64, employer: &Address, remaining: i128, threshold: i128) {
+    env.events().publish(
+        (symbol_short!("low_bal"), id),
+        (employer.clone(), remaining, threshold),
+    );
+}

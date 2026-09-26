@@ -62,7 +62,7 @@ fn test_create_stream() {
 
     client.initialize(&admin);
     client.set_min_deposit(&admin, &0, &100);
-    let id = client.create_stream(&employer, &employee, &token_id, &3600, &1, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &3600, &1, &0, &None);
     assert_eq!(id, 1);
     assert_eq!(client.stream_count(), 1);
 
@@ -83,7 +83,7 @@ fn test_claimable_increases_with_time() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     assert_eq!(client.claimable(&id), 1000);
@@ -98,7 +98,7 @@ fn test_withdraw() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 200);
     let withdrawn = client.withdraw(&employee, &id);
@@ -120,7 +120,7 @@ fn test_stream_exhausted_when_fully_withdrawn() {
 
     client.initialize(&admin);
     client.set_min_deposit(&admin, &0, &100);
-    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     let withdrawn = client.withdraw(&employee, &id);
@@ -137,7 +137,7 @@ fn test_pause_and_resume() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.pause_stream(&employer, &id);
@@ -158,7 +158,7 @@ fn test_cancel_stream_refunds_employer() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.cancel_stream(&employer, &id);
@@ -187,7 +187,7 @@ fn test_cancel_stream_enriched_event() {
 
     client.initialize(&admin);
     // deposit=10_000, rate=10/s → after 100 s claimable=1000, refund=9000
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.cancel_stream(&employer, &id);
@@ -224,7 +224,15 @@ fn test_stop_time_caps_claimable() {
 
     client.initialize(&admin);
     let now = env.ledger().timestamp();
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &(now + 50));
+    let id = client.create_stream(
+        &employer,
+        &employee,
+        &token_id,
+        &10_000,
+        &10,
+        &(now + 50),
+        &None,
+    );
 
     env.ledger().with_mut(|l| l.timestamp += 200);
     assert_eq!(client.claimable(&id), 500);
@@ -239,7 +247,7 @@ fn test_pause_excludes_paused_time() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 50);
     client.pause_stream(&employer, &id);
@@ -260,7 +268,7 @@ fn test_multiple_pause_resume_cycles() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 30);
     client.pause_stream(&employer, &id);
@@ -288,7 +296,7 @@ fn test_withdraw_during_pause_panics() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 50);
     client.pause_stream(&employer, &id);
@@ -306,7 +314,7 @@ fn test_cannot_withdraw_from_cancelled_stream() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.cancel_stream(&employer, &id);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
@@ -323,7 +331,7 @@ fn test_withdraw_exhausted_returns_zero() {
 
     client.initialize(&admin);
     client.set_min_deposit(&admin, &0, &100);
-    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.withdraw(&employee, &id);
@@ -343,7 +351,7 @@ fn test_withdraw_cancelled_still_panics() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.cancel_stream(&employer, &id);
     client.withdraw(&employee, &id);
 }
@@ -360,7 +368,7 @@ fn test_reentrant_withdraw_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.as_contract(&client.address, || {
         let mut stream = storage::load_stream(&env, id).unwrap();
@@ -394,6 +402,7 @@ fn test_claimable_overflow_panics() {
         last_withdraw_time: 0,
         status: StreamStatus::Active,
         locked: false,
+        low_balance_threshold: 0,
     };
 
     claimable_amount(&stream, 2);
@@ -421,6 +430,7 @@ fn test_claimable_large_elapsed_capped_by_deposit() {
         last_withdraw_time: 0,
         status: StreamStatus::Active,
         locked: false,
+        low_balance_threshold: 0,
     };
 
     let result = claimable_amount(&stream, u64::MAX);
@@ -437,7 +447,7 @@ fn test_create_stream_zero_rate_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    client.create_stream(&employer, &employee, &token_id, &10_000, &0, &0);
+    client.create_stream(&employer, &employee, &token_id, &10_000, &0, &0, &None);
 }
 
 #[test]
@@ -450,7 +460,7 @@ fn test_create_stream_positive_rate_ok() {
 
     client.initialize(&admin);
     client.set_min_deposit(&admin, &0, &100);
-    let id = client.create_stream(&employer, &employee, &token_id, &3600, &1, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &3600, &1, &0, &None);
     assert_eq!(id, 1);
     assert_eq!(client.get_stream(&id).rate_per_second, 1);
 }
@@ -515,7 +525,7 @@ fn test_create_stream_below_min_deposit_rejected() {
     client.initialize(&admin);
     client.set_min_deposit(&admin, &0, &10_000);
     // deposit = 100 < min_deposit = 10_000 → E007
-    client.create_stream(&employer, &employee, &token_id, &100, &1, &0);
+    client.create_stream(&employer, &employee, &token_id, &100, &1, &0, &None);
 }
 
 /// rate_per_second above MAX_RATE_PER_SECOND must be rejected with E008.
@@ -537,6 +547,7 @@ fn test_create_stream_rate_too_high_rejected() {
         &1_000_000_000_000,
         &1_000_000_001,
         &0,
+        &None,
     );
 }
 
@@ -550,7 +561,7 @@ fn test_create_stream_same_employer_employee_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    client.create_stream(&employer, &employer, &token_id, &10_000, &1, &0);
+    client.create_stream(&employer, &employer, &token_id, &10_000, &1, &0, &None);
 }
 
 /// stop_time in the past must be rejected — issue #63 (TEST-14).
@@ -568,7 +579,15 @@ fn test_create_stream_past_stop_time_rejected() {
     // Advance ledger so we have a non-zero "now", then set stop_time in the past.
     env.ledger().with_mut(|l| l.timestamp = 1_000);
     let past_stop_time = env.ledger().timestamp() - 1;
-    client.create_stream(&employer, &employee, &token_id, &10_000, &1, &past_stop_time);
+    client.create_stream(
+        &employer,
+        &employee,
+        &token_id,
+        &10_000,
+        &1,
+        &past_stop_time,
+        &None,
+    );
 }
 
 /// top_up with amount = 0 must be rejected.
@@ -582,8 +601,8 @@ fn test_top_up_zero_amount_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
-    client.top_up(&employer, &id, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0, &None);
+    client.top_up(&employer, &id, &0, &None);
 }
 
 // ---------------------------------------------------------------------------
@@ -602,7 +621,7 @@ fn test_update_rate_increase() {
 
     client.initialize(&admin);
     // rate=10/s, deposit=10_000
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     // 100 s at old rate → 1000 tokens accrued but NOT withdrawn
     env.ledger().with_mut(|l| l.timestamp += 100);
@@ -628,7 +647,7 @@ fn test_update_rate_decrease() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.update_rate(&employer, &id, &5);
@@ -650,7 +669,7 @@ fn test_update_rate_on_paused_stream() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 50);
     client.pause_stream(&employer, &id);
@@ -673,7 +692,7 @@ fn test_update_rate_zero_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.update_rate(&employer, &id, &0);
 }
 
@@ -688,7 +707,7 @@ fn test_update_rate_too_high_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.update_rate(&employer, &id, &1_000_000_001);
 }
 
@@ -704,7 +723,7 @@ fn test_update_rate_wrong_caller_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.update_rate(&attacker, &id, &5);
 }
 
@@ -719,7 +738,7 @@ fn test_update_rate_cancelled_stream_rejected() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.cancel_stream(&employer, &id);
     client.update_rate(&employer, &id, &5);
 }
@@ -741,7 +760,7 @@ fn test_upgrade_preserves_stream_state() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
 
@@ -984,7 +1003,7 @@ fn test_streams_by_employer_load_100() {
         // constraint and avoid any per-employee index collisions.
         let employee = Address::generate(&env);
         // deposit=1000, rate=1 — small values to keep the test fast.
-        let id = client.create_stream(&employer, &employee, &token_id, &1000, &1, &0);
+        let id = client.create_stream(&employer, &employee, &token_id, &1000, &1, &0, &None);
         assert_eq!(
             id,
             i + 1,
@@ -1055,7 +1074,7 @@ fn test_cancel_stream_event_contains_amounts() {
 
     client.initialize(&admin);
     // deposit=10_000, rate=10/s; after 100s → claimable=1_000, refund=9_000
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.cancel_stream(&employer, &id);
@@ -1090,7 +1109,7 @@ fn test_cancel_stream_paused_zero_claimable_full_refund_event() {
 
     client.initialize(&admin);
     // Immediately pause and cancel — 0 seconds elapsed, so claimable=0, refund=full deposit.
-    let id = client.create_stream(&employer, &employee, &token_id, &5_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &5_000, &10, &0, &None);
     client.pause_stream(&employer, &id);
     client.cancel_stream(&employer, &id);
 
@@ -1187,7 +1206,7 @@ fn test_top_up_deposit_overflow_uses_err_overflow() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0, &None);
 
     // Force deposit to i128::MAX so adding any positive amount overflows.
     env.as_contract(&client.address, || {
@@ -1197,7 +1216,7 @@ fn test_top_up_deposit_overflow_uses_err_overflow() {
     });
 
     // top_up with 1 should panic with E004, not a generic "deposit overflow" message.
-    client.top_up(&employer, &id, &1);
+    client.top_up(&employer, &id, &1, &None);
 }
 
 // ---------------------------------------------------------------------------
@@ -1215,9 +1234,9 @@ fn test_withdraw_all_three_streams() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
-    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &5, &0);
-    let id3 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
+    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &5, &0, &None);
+    let id3 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     let results = client.withdraw_all(&employee);
@@ -1249,8 +1268,8 @@ fn test_withdraw_all_skips_zero_claimable() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let _id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
-    let _id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &5, &0);
+    let _id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
+    let _id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &5, &0, &None);
 
     // No time has passed → nothing claimable
     let results = client.withdraw_all(&employee);
@@ -1267,9 +1286,9 @@ fn test_withdraw_all_skips_cancelled_and_paused() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
-    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &5, &0);
-    let id3 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
+    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &5, &0, &None);
+    let id3 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 50);
 
@@ -1311,12 +1330,12 @@ fn test_withdraw_all_partial_claimable() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
 
     // Create id2 after time has advanced — it starts now, so 0 claimable
-    let _id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let _id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     let results = client.withdraw_all(&employee);
 
@@ -1364,10 +1383,10 @@ fn test_stream_count_by_employer_increments() {
     client.initialize(&admin);
     assert_eq!(client.stream_count_by_employer(&employer), 0);
 
-    client.create_stream(&employer, &employee1, &token_id, &10_000, &10, &0);
+    client.create_stream(&employer, &employee1, &token_id, &10_000, &10, &0, &None);
     assert_eq!(client.stream_count_by_employer(&employer), 1);
 
-    client.create_stream(&employer, &employee2, &token_id, &10_000, &10, &0);
+    client.create_stream(&employer, &employee2, &token_id, &10_000, &10, &0, &None);
     assert_eq!(client.stream_count_by_employer(&employer), 2);
 }
 
@@ -1385,10 +1404,10 @@ fn test_stream_count_by_employee_increments() {
     client.initialize(&admin);
     assert_eq!(client.stream_count_by_employee(&employee), 0);
 
-    client.create_stream(&employer1, &employee, &token_id1, &10_000, &10, &0);
+    client.create_stream(&employer1, &employee, &token_id1, &10_000, &10, &0, &None);
     assert_eq!(client.stream_count_by_employee(&employee), 1);
 
-    client.create_stream(&employer2, &employee, &token_id2, &10_000, &10, &0);
+    client.create_stream(&employer2, &employee, &token_id2, &10_000, &10, &0, &None);
     assert_eq!(client.stream_count_by_employee(&employee), 2);
 }
 
@@ -1404,9 +1423,9 @@ fn test_stream_count_by_employer_matches_list_length() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    client.create_stream(&employer, &employee1, &token_id, &10_000, &10, &0);
-    client.create_stream(&employer, &employee2, &token_id, &10_000, &10, &0);
-    client.create_stream(&employer, &employee3, &token_id, &10_000, &10, &0);
+    client.create_stream(&employer, &employee1, &token_id, &10_000, &10, &0, &None);
+    client.create_stream(&employer, &employee2, &token_id, &10_000, &10, &0, &None);
+    client.create_stream(&employer, &employee3, &token_id, &10_000, &10, &0, &None);
 
     let count = client.stream_count_by_employer(&employer);
     let list_len = client.streams_by_employer(&employer).len() as u64;
@@ -1424,8 +1443,8 @@ fn test_stream_count_by_employee_matches_list_length() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
-    client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
+    client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     let count = client.stream_count_by_employee(&employee);
     let list_len = client.streams_by_employee(&employee).len() as u64;
@@ -1447,7 +1466,7 @@ fn test_stream_status_active() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     assert_eq!(client.stream_status(&id), StreamStatus::Active);
 }
 
@@ -1461,7 +1480,7 @@ fn test_stream_status_paused() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.pause_stream(&employer, &id);
     assert_eq!(client.stream_status(&id), StreamStatus::Paused);
 }
@@ -1476,7 +1495,7 @@ fn test_stream_status_cancelled() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
     client.cancel_stream(&employer, &id);
     assert_eq!(client.stream_status(&id), StreamStatus::Cancelled);
 }
@@ -1492,7 +1511,7 @@ fn test_stream_status_exhausted() {
 
     client.initialize(&admin);
     client.set_min_deposit(&admin, &0, &100);
-    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &0, &None);
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.withdraw(&employee, &id);
     assert_eq!(client.stream_status(&id), StreamStatus::Exhausted);
@@ -1523,8 +1542,8 @@ fn test_cancel_streams_batch_happy_path() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id1 = client.create_stream(&employer, &employee1, &token_id, &10_000, &10, &0);
-    let id2 = client.create_stream(&employer, &employee2, &token_id, &10_000, &10, &0);
+    let id1 = client.create_stream(&employer, &employee1, &token_id, &10_000, &10, &0, &None);
+    let id2 = client.create_stream(&employer, &employee2, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
 
@@ -1550,7 +1569,7 @@ fn test_cancel_streams_batch_includes_paused_stream() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 50);
     client.pause_stream(&employer, &id);
@@ -1586,8 +1605,8 @@ fn test_cancel_streams_batch_partial_failure_reverts_all() {
     let token_id = setup_token(&env, &employer);
 
     client.initialize(&admin);
-    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
-    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
+    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
 
     // Cancel id2 individually first
     client.cancel_stream(&employer, &id2);
@@ -1617,7 +1636,7 @@ fn test_cancel_streams_batch_wrong_employer_rejected() {
 
     client.initialize(&admin);
     // Stream owned by employer1
-    let id = client.create_stream(&employer1, &employee, &token_id, &10_000, &10, &0);
+    let id = client.create_stream(&employer1, &employee, &token_id, &10_000, &10, &0, &None);
 
     // employer2 tries to batch cancel employer1's stream — must panic
     let mut ids = soroban_sdk::Vec::new(&env);
@@ -1645,7 +1664,7 @@ fn test_withdraw_transitions_to_exhausted_after_stop_time() {
     // Stream that runs for exactly 50 seconds at 10 tokens/s → 500 total
     let now = env.ledger().timestamp();
     let stop = now + 50;
-    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &stop);
+    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &stop, &None);
 
     // Advance past stop_time — all tokens have been streamed
     env.ledger().with_mut(|l| l.timestamp += 100);
@@ -1673,7 +1692,7 @@ fn test_settle_stream_transitions_to_exhausted() {
     let now = env.ledger().timestamp();
     let stop = now + 50;
     // Stream: 500 tokens, 10/s, 50-second window — deposit exactly matches
-    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &stop);
+    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &stop, &None);
 
     // Employee withdraws all earned tokens before calling settle
     env.ledger().with_mut(|l| l.timestamp = stop);
@@ -1700,7 +1719,7 @@ fn test_settle_stream_before_stop_time_panics() {
     client.initialize(&admin);
     let now = env.ledger().timestamp();
     let stop = now + 1000;
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &stop);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &stop, &None);
     // stop_time not yet reached — must panic
     client.settle_stream(&id);
 }
@@ -1721,9 +1740,132 @@ fn test_settle_stream_with_claimable_tokens_panics() {
     let now = env.ledger().timestamp();
     let stop = now + 50;
     // Deposit more than stop_time * rate_per_second → tokens remain after stop
-    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &stop);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &stop, &None);
 
     env.ledger().with_mut(|l| l.timestamp += 100);
     // Still has 500 claimable tokens (10/s * 50s) — must panic
     client.settle_stream(&id);
+}
+
+// ---------------------------------------------------------------------------
+// PROD-11 – low_balance event after withdraw
+// ---------------------------------------------------------------------------
+
+fn low_bal_emitted(env: &Env) -> bool {
+    use soroban_sdk::{symbol_short, Symbol, TryFromVal};
+    env.events().all().iter().any(|(_, topics, _)| {
+        topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(env, &t).ok())
+            .map_or(false, |s| s == symbol_short!("low_bal"))
+    })
+}
+
+#[test]
+fn test_low_balance_threshold_crossed_emits_event() {
+    let (env, client) = setup();
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&Address::generate(&env));
+
+    let id = client.create_stream(
+        &employer,
+        &employee,
+        &token_id,
+        &10_000,
+        &10,
+        &0,
+        &Some(5_000),
+    );
+    assert_eq!(client.get_stream(&id).low_balance_threshold, 5_000);
+
+    env.ledger().with_mut(|l| l.timestamp += 600);
+    client.withdraw(&employee, &id); // remaining 4_000 < 5_000
+    assert!(low_bal_emitted(&env));
+}
+
+#[test]
+fn test_low_balance_threshold_not_crossed_no_event() {
+    let (env, client) = setup();
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&Address::generate(&env));
+
+    let id = client.create_stream(
+        &employer,
+        &employee,
+        &token_id,
+        &10_000,
+        &10,
+        &0,
+        &Some(5_000),
+    );
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    client.withdraw(&employee, &id); // remaining 9_000 >= 5_000
+    assert!(!low_bal_emitted(&env));
+}
+
+#[test]
+fn test_top_up_updates_low_balance_threshold() {
+    let (env, client) = setup();
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&Address::generate(&env));
+
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0, &None);
+    assert_eq!(client.get_stream(&id).low_balance_threshold, 0);
+    client.top_up(&employer, &id, &1_000, &Some(2_000));
+    assert_eq!(client.get_stream(&id).low_balance_threshold, 2_000);
+}
+
+// ---------------------------------------------------------------------------
+// PROD-12 – get_streams_batch
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_streams_batch_returns_in_order() {
+    let (env, client) = setup();
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&Address::generate(&env));
+
+    let a = client.create_stream(&employer, &employee, &token_id, &1_000, &1, &0, &None);
+    let b = client.create_stream(&employer, &employee, &token_id, &2_000, &1, &0, &None);
+    let c = client.create_stream(&employer, &employee, &token_id, &3_000, &1, &0, &None);
+
+    let ids = soroban_sdk::vec![&env, c, a, b];
+    let streams = client.get_streams_batch(&ids);
+    assert_eq!(streams.len(), 3);
+    assert_eq!(streams.get(0).unwrap().id, c);
+    assert_eq!(streams.get(1).unwrap().id, a);
+    assert_eq!(streams.get(2).unwrap().id, b);
+    assert_eq!(streams.get(2).unwrap().deposit, 2_000);
+}
+
+#[test]
+#[should_panic]
+fn test_get_streams_batch_unknown_id_panics() {
+    let (env, client) = setup();
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&Address::generate(&env));
+
+    let a = client.create_stream(&employer, &employee, &token_id, &1_000, &1, &0, &None);
+    client.get_streams_batch(&soroban_sdk::vec![&env, a, 999]);
+}
+
+#[test]
+#[should_panic]
+fn test_get_streams_batch_over_cap_panics() {
+    let (env, client) = setup();
+    let mut ids = soroban_sdk::Vec::new(&env);
+    for i in 0..51u64 {
+        ids.push_back(i);
+    }
+    client.get_streams_batch(&ids);
 }

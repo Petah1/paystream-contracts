@@ -36,6 +36,9 @@ pub struct Stream {
     /// contract.  If a future upgrade introduces a callback hook the guard
     /// will catch it.
     pub locked: bool,
+    /// Remaining-deposit threshold below which a `low_bal` event is emitted
+    /// after each withdraw. 0 = disabled.
+    pub low_balance_threshold: i128,
 }
 
 /// Parameters for a single stream in a batch create call.

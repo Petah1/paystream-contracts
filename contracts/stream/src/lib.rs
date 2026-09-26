@@ -205,6 +205,7 @@ impl StreamContract {
         deposit: i128,
         rate_per_second: i128,
         stop_time: u64,
+        low_balance_threshold: Option<i128>,
     ) -> u64 {
         employer.require_auth();
         assert!(!get_paused(&env), "{}", ERR_CONTRACT_PAUSED);
@@ -239,6 +240,7 @@ impl StreamContract {
             last_withdraw_time: now,
             status: StreamStatus::Active,
             locked: false,
+            low_balance_threshold: low_balance_threshold.unwrap_or(0),
         };
         save_stream(&env, &stream);
         index_employer_stream(&env, &employer, id);
@@ -306,6 +308,7 @@ impl StreamContract {
                 last_withdraw_time: now,
                 status: StreamStatus::Active,
                 locked: false,
+                low_balance_threshold: 0,
             };
             save_stream(&env, &stream);
             index_employer_stream(&env, &employer, id);
@@ -385,6 +388,16 @@ impl StreamContract {
         stream.locked = false;
         save_stream(&env, &stream);
         events::withdrawn(&env, stream_id, &employee, amount);
+        let remaining = stream.deposit - stream.withdrawn;
+        if stream.low_balance_threshold > 0 && remaining < stream.low_balance_threshold {
+            events::low_balance(
+                &env,
+                stream_id,
+                &stream.employer,
+                remaining,
+                stream.low_balance_threshold,
+            );
+        }
         amount
     }
 
@@ -479,7 +492,13 @@ impl StreamContract {
     /// - E006 if stream is Exhausted
     /// - Panics if `amount` ≤ 0
     /// - Panics if the token transfer fails
-    pub fn top_up(env: Env, employer: Address, stream_id: u64, amount: i128) {
+    pub fn top_up(
+        env: Env,
+        employer: Address,
+        stream_id: u64,
+        amount: i128,
+        low_balance_threshold: Option<i128>,
+    ) {
         employer.require_auth();
         validate_top_up(amount);
         let mut stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
@@ -502,6 +521,9 @@ impl StreamContract {
             .deposit
             .checked_add(amount)
             .expect(ERR_OVERFLOW);
+        if let Some(threshold) = low_balance_threshold {
+            stream.low_balance_threshold = threshold;
+        }
         save_stream(&env, &stream);
         events::topped_up(&env, stream_id, &employer, amount);
     }
@@ -762,6 +784,26 @@ impl StreamContract {
     /// - Panics if stream not found
     pub fn get_stream(env: Env, stream_id: u64) -> Stream {
         load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND)
+    }
+
+    /// Read the full state of up to 50 streams in a single call.
+    ///
+    /// # Parameters
+    /// - `stream_ids` — IDs of the streams to read (max 50)
+    ///
+    /// # Returns
+    /// `Vec<Stream>` in the same order as `stream_ids`.
+    ///
+    /// # Errors
+    /// - Panics if `stream_ids` has more than 50 entries
+    /// - Panics if any stream is not found
+    pub fn get_streams_batch(env: Env, stream_ids: Vec<u64>) -> Vec<Stream> {
+        assert!(stream_ids.len() <= 50, "stream_ids length exceeds 50");
+        let mut streams: Vec<Stream> = Vec::new(&env);
+        for stream_id in stream_ids.iter() {
+            streams.push_back(load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND));
+        }
+        streams
     }
 
     /// Query only the status of a stream by ID.
