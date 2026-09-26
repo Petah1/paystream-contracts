@@ -72,6 +72,22 @@ pub enum DataKey {
     EmployeeStreams(Address),
     /// Contract version written by migrate() for off-chain upgrade verification.
     Version,
+    /// Recurring top-up authorization for a stream.
+    AutoTopup(u64),
+}
+
+/// Employer-authorized recurring top-up settings for a stream.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AutoTopupConfig {
+    /// Top up when `deposit - withdrawn` drops below this value.
+    pub trigger_threshold: i128,
+    /// Amount transferred from the employer per auto top-up.
+    pub topup_amount: i128,
+    /// Maximum cumulative amount auto top-ups may transfer.
+    pub max_total: i128,
+    /// Cumulative amount already transferred by auto top-ups.
+    pub total_topped_up: i128,
 }
 
 /// Contract error codes – panic messages reference these names so callers can
@@ -102,6 +118,8 @@ pub enum DataKey {
 /// | E021 | ERR_ADMIN_NOT_SET       | Admin has not been initialised                     |
 /// | E022 | ERR_STOP_TIME_PAST      | `stop_time` must be in the future                  |
 /// | E023 | ERR_AMOUNT_NOT_POSITIVE | Amount must be positive                            |
+/// | E025 | ERR_INVALID_AUTO_TOPUP  | Invalid auto top-up parameters                     |
+/// | E026 | ERR_NO_AUTO_TOPUP       | No auto top-up configured for the stream           |
 pub const ERR_ZERO_RATE: &str = "E001: rate_per_second must be greater than zero";
 pub const ERR_ZERO_DEPOSIT: &str = "E002: deposit must be positive";
 pub const ERR_REENTRANT: &str = "E003: reentrant withdraw detected";
@@ -114,3 +132,6 @@ pub const ERR_BAD_NONCE: &str = "E009: invalid admin nonce";
 pub const ERR_NO_PENDING_ADMIN: &str = "E010: no pending admin set";
 pub const ERR_NOT_PENDING_ADMIN: &str = "E011: not the pending admin";
 pub const ERR_BAD_PENDING_NONCE: &str = "E024: invalid pending admin nonce";
+pub const ERR_INVALID_AUTO_TOPUP: &str =
+    "E025: auto top-up params must be positive and topup_amount <= max_total";
+pub const ERR_NO_AUTO_TOPUP: &str = "E026: no auto top-up configured";

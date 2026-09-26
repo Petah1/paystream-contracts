@@ -18,14 +18,15 @@ use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
 pub const CONTRACT_VERSION: u32 = 1;
 use storage::{
     claimable_amount, clear_pending_admin, consume_admin_nonce, get_admin, get_admin_nonce,
-    get_employee_streams, get_employer_streams, get_min_deposit, get_pending_admin,
-    get_pending_admin_nonce, index_employee_stream, index_employer_stream, load_stream, next_id,
-    save_stream, set_admin, set_min_deposit, set_pending_admin, set_pending_admin_nonce,
+    get_auto_topup, get_employee_streams, get_employer_streams, get_min_deposit,
+    get_pending_admin, get_pending_admin_nonce, index_employee_stream, index_employer_stream,
+    load_stream, next_id, remove_auto_topup, save_stream, set_admin, set_auto_topup,
+    set_min_deposit, set_pending_admin, set_pending_admin_nonce,
 };
 use types::{
-    DataKey, Stream, StreamParams, StreamStatus, ERR_BAD_PENDING_NONCE, ERR_NO_PENDING_ADMIN,
+    AutoTopupConfig, DataKey, Stream, StreamParams, StreamStatus, ERR_BAD_PENDING_NONCE, ERR_NO_PENDING_ADMIN,
     ERR_NOT_PENDING_ADMIN, ERR_REENTRANT, ERR_STREAM_CANCELLED, ERR_STREAM_EXHAUSTED,
-    ERR_ZERO_DEPOSIT,
+    ERR_INVALID_AUTO_TOPUP, ERR_NO_AUTO_TOPUP, ERR_ZERO_DEPOSIT,
 };
 use validate::{validate_create_stream, validate_rate, validate_top_up};
 
@@ -38,6 +39,49 @@ fn get_paused(env: &Env) -> bool {
 
 fn set_paused(env: &Env, paused: bool) {
     env.storage().instance().set(&DataKey::Paused, &paused);
+}
+
+/// Applies a pre-authorized auto top-up after a withdraw when the stream's
+/// remaining balance falls below the configured trigger threshold.
+///
+/// Uses `transfer_from`, so the employer must have approved the contract as
+/// spender. The top-up is skipped (never reverts the withdraw) when the cap is
+/// reached, the stream has ended, or allowance/balance is insufficient.
+fn maybe_auto_topup(env: &Env, stream: &mut Stream, now: u64) {
+    let mut config = match get_auto_topup(env, stream.id) {
+        Some(c) => c,
+        None => return,
+    };
+    if stream.stop_time > 0 && now >= stream.stop_time {
+        return;
+    }
+    let remaining = stream.deposit - stream.withdrawn;
+    if remaining >= config.trigger_threshold {
+        return;
+    }
+    let amount = config
+        .topup_amount
+        .min(config.max_total - config.total_topped_up);
+    if amount <= 0 {
+        return;
+    }
+
+    let this = env.current_contract_address();
+    let token_client = token::Client::new(env, &stream.token);
+    if !matches!(
+        token_client.try_transfer_from(&this, &stream.employer, &this, &amount),
+        Ok(Ok(()))
+    ) {
+        return;
+    }
+
+    stream.deposit = stream.deposit.checked_add(amount).expect(ERR_OVERFLOW);
+    if stream.status == StreamStatus::Exhausted {
+        stream.status = StreamStatus::Active;
+    }
+    config.total_topped_up += amount;
+    set_auto_topup(env, stream.id, &config);
+    events::auto_topped_up(env, stream.id, amount, config.total_topped_up);
 }
 
 #[contract]
@@ -381,6 +425,7 @@ impl StreamContract {
 
         let token_client = token::Client::new(&env, &stream.token);
         token_client.transfer(&env.current_contract_address(), &employee, &amount);
+        maybe_auto_topup(&env, &mut stream, now);
 
         stream.locked = false;
         save_stream(&env, &stream);
@@ -451,6 +496,7 @@ impl StreamContract {
 
             let token_client = token::Client::new(&env, &stream.token);
             token_client.transfer(&env.current_contract_address(), &employee, &amount);
+            maybe_auto_topup(&env, &mut stream, now);
 
             stream.locked = false;
             save_stream(&env, &stream);
@@ -504,6 +550,82 @@ impl StreamContract {
             .expect(ERR_OVERFLOW);
         save_stream(&env, &stream);
         events::topped_up(&env, stream_id, &employer, amount);
+    }
+
+    /// Employer pre-authorizes recurring top-ups for a stream.
+    ///
+    /// After each withdraw, if `deposit - withdrawn < trigger_threshold`, the
+    /// contract pulls `topup_amount` from the employer via `transfer_from`,
+    /// until `max_total` has been transferred in total. The employer must
+    /// approve the stream contract as spender for at least that allowance.
+    /// Calling again replaces the configuration and resets the running total.
+    ///
+    /// # Parameters
+    /// - `employer` — must match the stream's employer (requires auth)
+    /// - `stream_id` — ID of the stream
+    /// - `trigger_threshold` — remaining balance below which to top up (> 0)
+    /// - `topup_amount` — amount per top-up (> 0, ≤ `max_total`)
+    /// - `max_total` — cap on cumulative auto top-ups (> 0)
+    ///
+    /// # Errors
+    /// - Panics if stream not found or caller is not the employer
+    /// - E005 if stream is Cancelled
+    /// - E025 if parameters are invalid
+    pub fn set_auto_topup(
+        env: Env,
+        employer: Address,
+        stream_id: u64,
+        trigger_threshold: i128,
+        topup_amount: i128,
+        max_total: i128,
+    ) {
+        employer.require_auth();
+        assert!(
+            trigger_threshold > 0 && topup_amount > 0 && topup_amount <= max_total,
+            "{}",
+            ERR_INVALID_AUTO_TOPUP
+        );
+        let stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
+        assert_eq!(stream.employer, employer, "{}", ERR_NOT_EMPLOYER);
+        assert!(
+            stream.status != StreamStatus::Cancelled,
+            "{}",
+            ERR_STREAM_CANCELLED
+        );
+        set_auto_topup(
+            &env,
+            stream_id,
+            &AutoTopupConfig {
+                trigger_threshold,
+                topup_amount,
+                max_total,
+                total_topped_up: 0,
+            },
+        );
+        events::auto_topup_set(&env, stream_id, true);
+    }
+
+    /// Employer revokes a stream's recurring top-up authorization.
+    ///
+    /// # Errors
+    /// - Panics if stream not found or caller is not the employer
+    /// - E026 if no auto top-up is configured
+    pub fn cancel_auto_topup(env: Env, employer: Address, stream_id: u64) {
+        employer.require_auth();
+        let stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
+        assert_eq!(stream.employer, employer, "{}", ERR_NOT_EMPLOYER);
+        assert!(
+            get_auto_topup(&env, stream_id).is_some(),
+            "{}",
+            ERR_NO_AUTO_TOPUP
+        );
+        remove_auto_topup(&env, stream_id);
+        events::auto_topup_set(&env, stream_id, false);
+    }
+
+    /// Returns the stream's auto top-up configuration, if any.
+    pub fn get_auto_topup(env: Env, stream_id: u64) -> Option<AutoTopupConfig> {
+        get_auto_topup(&env, stream_id)
     }
 
     /// Employer pauses an active stream, stopping token accrual.

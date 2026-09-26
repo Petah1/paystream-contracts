@@ -122,6 +122,8 @@ The `cargo-cache` volume persists the Cargo registry between runs so subsequent 
 | `withdraw(employee, stream_id)` | Employee | Withdraw all claimable earnings |
 | `withdraw_all(employee)` | Employee | Withdraw from all streams in one transaction |
 | `top_up(employer, stream_id, amount)` | Employer | Add more funds to active stream |
+| `set_auto_topup(employer, stream_id, trigger_threshold, topup_amount, max_total)` | Employer | Pre-authorize recurring top-ups (requires token allowance) |
+| `cancel_auto_topup(employer, stream_id)` | Employer | Revoke recurring top-ups |
 | `pause_stream(employer, stream_id)` | Employer | Pause accrual |
 | `resume_stream(employer, stream_id)` | Employer | Resume accrual |
 | `cancel_stream(employer, stream_id)` | Employer | Pay employee earned share, refund remainder |
@@ -203,6 +205,8 @@ We welcome contributions from the community.
 - **Developer Setup & Guidelines**: Review [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup, coding standards, and PR workflows.
 - **Bounty Program**: PayStream maintains an active bounty track for open-source contributors across smart contracts, testing, security, and tooling. See [docs/bounties.md](docs/bounties.md) for open bounties, criteria, and entry-level tasks tagged with `good-first-issue`.
 - **First-Time Contributors**: Browse open beginner-friendly tasks in the [Good First Issues Tracker](https://github.com/veracindarella/paystream-contracts/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-issue).
+- **Questions & Community**: Ask questions, share ideas, and show what you've built in [GitHub Discussions](https://github.com/veracindarella/paystream-contracts/discussions).
+- **Roadmap**: See [docs/roadmap.md](docs/roadmap.md) for planned milestones through mainnet launch.
 
 ## Security
 

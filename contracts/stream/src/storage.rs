@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::types::{DataKey, Stream, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_NONCE, ERR_OVERFLOW};
+use crate::types::{AutoTopupConfig, DataKey, Stream, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_NONCE, ERR_OVERFLOW};
 use soroban_sdk::{Address, Env, Vec};
 
 /// Default minimum deposit (10_000 stroops = 0.001 XLM equivalent).
@@ -203,4 +203,24 @@ pub fn consume_admin_nonce(env: &Env, nonce: u64) {
     env.storage()
         .instance()
         .set(&DataKey::AdminNonce, &(expected + 1));
+}
+
+pub fn get_auto_topup(env: &Env, stream_id: u64) -> Option<AutoTopupConfig> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AutoTopup(stream_id))
+}
+
+pub fn set_auto_topup(env: &Env, stream_id: u64, config: &AutoTopupConfig) {
+    let key = DataKey::AutoTopup(stream_id);
+    env.storage().persistent().set(&key, config);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+}
+
+pub fn remove_auto_topup(env: &Env, stream_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::AutoTopup(stream_id));
 }

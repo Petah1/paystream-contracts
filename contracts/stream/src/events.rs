@@ -47,3 +47,15 @@ pub fn rate_updated(env: &Env, stream_id: u64, old_rate: i128, new_rate: i128) {
         (old_rate, new_rate),
     );
 }
+
+/// Emitted when an employer sets or cancels a recurring top-up authorization.
+pub fn auto_topup_set(env: &Env, stream_id: u64, enabled: bool) {
+    env.events()
+        .publish((symbol_short!("atopup_st"), stream_id), enabled);
+}
+
+/// Emitted when an auto top-up transfers funds into a stream.
+pub fn auto_topped_up(env: &Env, stream_id: u64, amount: i128, total: i128) {
+    env.events()
+        .publish((symbol_short!("atopup"), stream_id), (amount, total));
+}

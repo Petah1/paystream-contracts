@@ -1727,3 +1727,85 @@ fn test_settle_stream_with_claimable_tokens_panics() {
     // Still has 500 claimable tokens (10/s * 50s) — must panic
     client.settle_stream(&id);
 }
+
+// ---------------------------------------------------------------------------
+// PROD-13 – Recurring top-up authorization
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_auto_topup_triggers_after_withdraw_and_respects_cap() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    let token = paystream_token::TokenContractClient::new(&env, &token_id);
+
+    client.initialize(&admin);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    token.approve(&employer, &client.address, &15_000);
+    client.set_auto_topup(&employer, &id, &5_000, &10_000, &15_000);
+
+    // remaining 2_000 < 5_000 → top up 10_000
+    env.ledger().with_mut(|l| l.timestamp += 800);
+    client.withdraw(&employee, &id);
+    assert_eq!(client.get_stream(&id).deposit, 20_000);
+    assert_eq!(client.get_auto_topup(&id).unwrap().total_topped_up, 10_000);
+
+    // remaining 2_000 < 5_000 → capped at the 5_000 left under max_total
+    env.ledger().with_mut(|l| l.timestamp += 1_000);
+    client.withdraw(&employee, &id);
+    assert_eq!(client.get_stream(&id).deposit, 25_000);
+    assert_eq!(client.get_auto_topup(&id).unwrap().total_topped_up, 15_000);
+
+    // cap reached → no further top-ups
+    env.ledger().with_mut(|l| l.timestamp += 500);
+    client.withdraw(&employee, &id);
+    assert_eq!(client.get_stream(&id).deposit, 25_000);
+}
+
+#[test]
+fn test_auto_topup_skipped_without_allowance() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    client.set_auto_topup(&employer, &id, &5_000, &10_000, &15_000);
+
+    env.ledger().with_mut(|l| l.timestamp += 800);
+    assert_eq!(client.withdraw(&employee, &id), 8_000);
+    assert_eq!(client.get_stream(&id).deposit, 10_000);
+}
+
+#[test]
+fn test_cancel_auto_topup() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    client.set_auto_topup(&employer, &id, &5_000, &10_000, &15_000);
+    client.cancel_auto_topup(&employer, &id);
+    assert!(client.get_auto_topup(&id).is_none());
+}
+
+#[test]
+#[should_panic(expected = "E025")]
+fn test_set_auto_topup_rejects_amount_above_cap() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+    client.set_auto_topup(&employer, &id, &5_000, &20_000, &15_000);
+}
