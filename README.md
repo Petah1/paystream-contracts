@@ -202,7 +202,13 @@ claimable = min(
 )
 ```
 
-Time is capped at `stop_time` if set. Paused time is excluded.
+Time is capped at `stop_time` if set. Paused time is excluded. See the [worked examples](docs/api-reference.md#worked-examples).
+
+## Documentation
+
+- [API Reference](docs/api-reference.md)
+- [FAQ](docs/faq.md) — common integrator questions
+- [Operations Runbook](docs/operations-runbook.md) — admin procedures (nonce, pause, min deposit, admin transfer, upgrade)
 
 ---
 

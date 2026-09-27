@@ -16,6 +16,7 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
 - [Commit Conventions](#commit-conventions)
 - [Bounty Program & Finding Issues](#bounty-program--finding-issues)
 - [Pull Request Process](#pull-request-process)
+- [Changelog](#changelog)
 - [Testing Requirements](#testing-requirements)
 - [Code Review Expectations](#code-review-expectations)
 - [Glossary](#glossary)
@@ -287,6 +288,7 @@ When you open a PR, the description template will include this checklist. All it
 - [ ] Doc comments added or updated for changed public functions
 - [ ] README updated if public behaviour or the function table changed
 - [ ] No new `unwrap()` calls without a comment explaining why it is safe
+- [ ] `CHANGELOG.md` updated if the PR changes observable behavior (see [Changelog](#changelog))
 
 ### PR size
 
@@ -295,6 +297,42 @@ Keep PRs focused. A PR that touches a single concern is easier to review and fas
 ### Merging
 
 PRs are merged by a maintainer after at least one approving review and a passing CI run. Maintainers may squash commits to keep the history clean; if you want your individual commits preserved, say so in the PR description.
+
+---
+
+## Changelog
+
+[CHANGELOG.md](CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+### Who and when
+
+- **Every PR that changes observable behavior must include a CHANGELOG entry** — new or changed public functions, events, error codes, storage layout, fees, or CLI/deployment steps.
+- The PR author adds the entry in the same PR. Reviewers should request changes if it is missing.
+- Internal-only changes (refactors with no behavior change, tests, CI, typo fixes) do not need an entry.
+
+### Format
+
+Add entries under `## [Unreleased]`, in the matching section (create it if absent):
+
+| Section | Use for |
+|---|---|
+| `### Added` | New functions, events, error codes, or features |
+| `### Changed` | Changes to existing behavior or interfaces |
+| `### Fixed` | Bug fixes |
+| `### Security` | Vulnerability fixes or hardening |
+| `### Removed` | Removed functions or features |
+
+Prefix each entry with the issue ID when there is one:
+
+```markdown
+### Fixed
+
+- SEC-04: `initialize` now rejects a second call on an already-initialised token.
+```
+
+### Releases
+
+When cutting a release, a maintainer renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` (following Semantic Versioning), adds a fresh empty `[Unreleased]` section above it, and tags the release commit.
 
 ---
 

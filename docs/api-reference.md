@@ -546,6 +546,47 @@ stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
   -- claimable --stream_id 1
 ```
 
+#### Worked examples
+
+Each example mirrors a scenario covered in `contracts/stream/src/test.rs`.
+
+**1. Normal accrual** — `deposit = 1_000`, `rate_per_second = 10`, `stop_time = 0`, `last_withdraw_time = 0`, `withdrawn = 0`, `now = 50`
+
+```
+elapsed   = 50 - 0            = 50
+earned    = 50 * 10           = 500
+remaining = 1_000 - 0         = 1_000
+claimable = min(500, 1_000)   = 500
+```
+
+**2. With `stop_time`** — `deposit = 1_000`, `rate_per_second = 10`, `stop_time = 60`, `last_withdraw_time = 0`, `withdrawn = 0`, `now = 100`
+
+```
+effective_end = min(now, stop_time) = 60
+elapsed       = 60 - 0              = 60
+earned        = 60 * 10             = 600
+remaining     = 1_000 - 0           = 1_000
+claimable     = min(600, 1_000)     = 600   # time after stop_time never accrues
+```
+
+**3. After pause/resume** — `deposit = 10_000`, `rate_per_second = 10`; paused at T=100, resumed at T=200 (`resume_stream` sets `last_withdraw_time = 200`), `withdrawn = 0`, `now = 250`
+
+```
+elapsed   = 250 - 200          = 50    # the paused interval 100..200 is excluded
+earned    = 50 * 10            = 500
+remaining = 10_000 - 0         = 10_000
+claimable = min(500, 10_000)   = 500
+```
+
+> Resuming resets `last_withdraw_time`, so tokens accrued before the pause but not yet withdrawn are not carried over. Employees should withdraw before a stream is paused.
+
+**4. Exhausted stream** — `deposit = 1_000`, `rate_per_second = 10`, fully withdrawn at T=100 (`withdrawn = 1_000`, `status = Exhausted`), `now = 500`
+
+```
+status == Exhausted  → claimable = 0
+(formula would also give min(400 * 10, 1_000 - 1_000) = min(4_000, 0) = 0)
+```
+
 ---
 
 ### `claimable_at`
