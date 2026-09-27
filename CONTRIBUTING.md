@@ -17,6 +17,7 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
 - [Bounty Program & Finding Issues](#bounty-program--finding-issues)
 - [Pull Request Process](#pull-request-process)
 - [Testing Requirements](#testing-requirements)
+- [Writing Fuzz Targets](#writing-fuzz-targets)
 - [Code Review Expectations](#code-review-expectations)
 - [Glossary](#glossary)
 - [License](#license)
@@ -340,6 +341,79 @@ cargo test <name>  # run a single test by name
 ### Snapshot files
 
 Test snapshots in `test_snapshots/` are generated automatically by the SDK. Commit them alongside the test that produces them. If a snapshot changes unexpectedly, investigate before updating it — an unexpected snapshot diff often indicates a behaviour regression.
+
+---
+
+## Writing Fuzz Targets
+
+Fuzz targets live in the `paystream-stream-fuzz` package at `contracts/stream/fuzz/` (listed in the root `Cargo.toml` workspace `members`). They use
+[proptest](https://docs.rs/proptest) to generate randomized inputs and assert invariants.
+
+### Structure
+
+```
+contracts/stream/fuzz/
+├── Cargo.toml              # package manifest; one [[bin]] entry per target
+└── src/
+    ├── fuzz_claimable.rs
+    ├── fuzz_create_stream.rs
+    └── fuzz_withdraw.rs
+```
+
+Each target is a binary with an empty `main()` and a `proptest!` block of `#[test]` properties. The package depends on
+`paystream-stream` with the `testutils` feature so targets can call internal storage helpers and use `Env::default()`.
+
+### Adding a new target
+
+1. Create `contracts/stream/fuzz/src/fuzz_<name>.rs`:
+
+   ```rust
+   // SPDX-License-Identifier: Apache-2.0
+
+   use proptest::prelude::*;
+
+   proptest! {
+       #![proptest_config(ProptestConfig::with_cases(1_000_000))]
+
+       #[test]
+       fn prop_example(a in 0i128..1_000_000, b in 0i128..1_000_000) {
+           // Replace with a real contract invariant
+           prop_assert!(a.checked_add(b).is_some());
+       }
+   }
+
+   fn main() {}
+   ```
+
+2. Register it in `contracts/stream/fuzz/Cargo.toml`:
+
+   ```toml
+   [[bin]]
+   name = "fuzz_<name>"
+   path = "src/fuzz_<name>.rs"
+   ```
+
+### Running locally
+
+```bash
+cargo test --package paystream-stream-fuzz --bin fuzz_<name>
+# Fewer cases for a quick check:
+PROPTEST_CASES=1000 cargo test --package paystream-stream-fuzz --bin fuzz_<name>
+```
+
+### Updating CI
+
+Add a step to `.github/workflows/fuzz.yml`:
+
+```yaml
+      - name: Run proptest fuzz (1 000 000 iterations) — <name>
+        run: cargo test --package paystream-stream-fuzz --bin fuzz_<name>
+```
+
+### References
+
+- [proptest book](https://proptest-rs.github.io/proptest/)
+- [cargo-fuzz / Rust Fuzz Book](https://rust-fuzz.github.io/book/cargo-fuzz.html)
 
 ---
 

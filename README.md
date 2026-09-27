@@ -206,6 +206,19 @@ Time is capped at `stop_time` if set. Paused time is excluded.
 
 ---
 
+## Deployed Contracts
+
+Current testnet deployments (source of truth: [docs/testnet.md](docs/testnet.md)).
+
+| Contract | Network | Address | Explorer Link |
+|---|---|---|---|
+| PayStream Token | Stellar Testnet | `CDZQHVQHQMHIGJGSQIJVXGPGNZJQDQV4BBKMG7MSIDTJTTBBQYAEUPB` | [StellarExpert](https://stellar.expert/explorer/testnet/contract/CDZQHVQHQMHIGJGSQIJVXGPGNZJQDQV4BBKMG7MSIDTJTTBBQYAEUPB) |
+| PayStream Stream | Stellar Testnet | `CBXKDJUQYQDQKSQT6AKZRQWXDXTQHVXHBQQJQ3WKDXJHPNMRGYAQMRS` | [StellarExpert](https://stellar.expert/explorer/testnet/contract/CBXKDJUQYQDQKSQT6AKZRQWXDXTQHVXHBQQJQ3WKDXJHPNMRGYAQMRS) |
+
+> Contract IDs change after every redeployment. When updating [docs/testnet.md](docs/testnet.md), update this table in the same PR.
+
+---
+
 ## Deployment
 
 ### Testnet
