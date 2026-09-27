@@ -190,6 +190,8 @@ The `cargo-cache` volume persists across runs so subsequent builds are fast. WAS
 
 When adding a new error, assign the next available code, add the constant to `types.rs`, and document it in the table above.
 
+> **Keep docs in sync:** the [Error Codes table in `docs/api-reference.md`](docs/api-reference.md#error-codes) must match `contracts/stream/src/types.rs`. Whenever you add, change, or start raising an error from a new function, update its Code, Constant, Meaning, Triggered By, and Recommended Fix columns in the same PR.
+
 ### Documentation
 
 - Public functions must have a doc comment (`///`) explaining parameters, return value, and any panic conditions
