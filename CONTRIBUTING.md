@@ -36,55 +36,70 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
 
 The `rust-toolchain.toml` at the repo root pins the exact Rust channel and installs `rustfmt` and `clippy` automatically when you run any `cargo` command.
 
+> **Quick setup**: Run `make setup` to automatically install Rust, add the wasm32 target, and install Stellar CLI at the pinned version. This works on macOS and Linux (including WSL on Windows).
+
 ---
 
 ### macOS
 
 ```bash
-# 1. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 2. Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
-
-# 3. Clone and bootstrap
+# 1. Clone the repository
 git clone https://github.com/veracindarella/paystream-contracts.git
 cd paystream-contracts
-# rust-toolchain.toml handles the target and components automatically
 
-# 4. Verify
+# 2. Run automated setup (installs Rust, wasm32 target, and Stellar CLI)
+make setup
+
+# 3. Verify
 make test
 ```
 
-> Homebrew users can also install Rust via `brew install rust`, but `rustup` is preferred because it respects `rust-toolchain.toml`.
+> **Manual setup**: If you prefer to install dependencies manually, follow the steps below. Homebrew users can also install Rust via `brew install rust`, but `rustup` is preferred because it respects `rust-toolchain.toml`.
+
+```bash
+# Manual: Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Manual: Install Stellar CLI
+cargo install --locked stellar-cli --version 22.0.0
+
+# rust-toolchain.toml handles the target and components automatically
+```
 
 ---
 
 ### Linux
 
 ```bash
-# 1. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 2. Install build dependencies (Debian/Ubuntu)
+# 1. Install build dependencies (Debian/Ubuntu)
 sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
 
-# 3. Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
-
-# 4. Clone and bootstrap
+# 2. Clone the repository
 git clone https://github.com/veracindarella/paystream-contracts.git
 cd paystream-contracts
 
-# 5. Verify
+# 3. Run automated setup (installs Rust, wasm32 target, and Stellar CLI)
+make setup
+
+# 4. Verify
 make test
 ```
 
-For Fedora/RHEL replace step 2 with:
+For Fedora/RHEL replace step 1 with:
 ```bash
 sudo dnf install gcc openssl-devel
+```
+
+> **Manual setup**: If you prefer to install dependencies manually:
+
+```bash
+# Manual: Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Manual: Install Stellar CLI
+cargo install --locked stellar-cli --version 22.0.0
 ```
 
 ---
@@ -99,25 +114,32 @@ wsl --install
 # Restart when prompted, then open a WSL terminal
 
 # Inside WSL:
-# 2. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 3. Install build dependencies
+# 2. Install build dependencies
 sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
 
-# 4. Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
-
-# 5. Clone and bootstrap
+# 3. Clone the repository
 git clone https://github.com/veracindarella/paystream-contracts.git
 cd paystream-contracts
 
-# 6. Verify
+# 4. Run automated setup (installs Rust, wasm32 target, and Stellar CLI)
+make setup
+
+# 5. Verify
 make test
 ```
 
 > If you prefer not to use WSL, the [Docker path](#docker-any-os) below works natively on Windows with Docker Desktop.
+
+> **Manual setup**: If you prefer to install dependencies manually inside WSL:
+
+```bash
+# Manual: Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Manual: Install Stellar CLI
+cargo install --locked stellar-cli --version 22.0.0
+```
 
 ---
 
