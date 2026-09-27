@@ -198,8 +198,9 @@ fn test_cancel_stream_enriched_event() {
     let events = env.events().all();
     let cancelled_event = events.iter().find(|(_, topics, _): &(_, SdkVec<Val>, Val)| {
         use soroban_sdk::TryIntoVal;
-        if let Some(first) = topics.get(0) {
-            let sym: Result<soroban_sdk::Symbol, _> = first.try_into_val(&env);
+        // Check second topic element (index 1) since index 0 is now "v1"
+        if let Some(second) = topics.get(1) {
+            let sym: Result<soroban_sdk::Symbol, _> = second.try_into_val(&env);
             sym.map(|s| s == symbol_short!("cancelled")).unwrap_or(false)
         } else {
             false
@@ -1070,6 +1071,7 @@ fn test_cancel_stream_event_contains_amounts() {
         *topics
             == vec![
                 &env,
+                symbol_short!("v1").into_val(&env),
                 symbol_short!("cancelled").into_val(&env),
                 id.into_val(&env),
             ]
@@ -1106,6 +1108,7 @@ fn test_cancel_stream_paused_zero_claimable_full_refund_event() {
         *topics
             == vec![
                 &env,
+                symbol_short!("v1").into_val(&env),
                 symbol_short!("cancelled").into_val(&env),
                 id.into_val(&env),
             ]
@@ -1785,5 +1788,106 @@ fn test_resume_stream_resets_last_withdraw_time() {
         client.claimable(&id),
         0,
         "claimable must be 0 immediately after resume (no elapsed time)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Event Schema Validation Tests
+// ---------------------------------------------------------------------------
+
+/// Validates that all events follow the documented schema with v1 version prefix.
+/// This test ensures off-chain indexers can reliably parse events.
+#[test]
+fn test_event_schema_versioning() {
+    use soroban_sdk::testutils::Events as _;
+    use soroban_sdk::{symbol_short, vec, IntoVal};
+
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    // Test contract_initialized event
+    client.initialize(&admin);
+    let events = env.events().all();
+    let init_event = events.last().unwrap();
+    assert_eq!(
+        init_event.1,
+        vec![&env, symbol_short!("v1"), symbol_short!("init"),],
+        "contract_initialized event must have v1 schema version"
+    );
+
+    // Test stream_created event
+    let id = client.create_stream(&employer, &employee, &token_id, &3600, &1, &0);
+    let events = env.events().all();
+    let created_event = events.iter().find(|(_, topics, _)| {
+        topics.get(1) == Some(&symbol_short!("created").into_val(&env))
+    }).unwrap();
+    assert_eq!(
+        created_event.1,
+        vec![&env, symbol_short!("v1"), symbol_short!("created"), id.into_val(&env)],
+        "stream_created event must have v1 schema version and stream_id"
+    );
+
+    // Test withdrawn event
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    client.withdraw(&employee, &id);
+    let events = env.events().all();
+    let withdraw_event = events.iter().find(|(_, topics, _)| {
+        topics.get(1) == Some(&symbol_short!("withdraw").into_val(&env))
+    }).unwrap();
+    assert_eq!(
+        withdraw_event.1,
+        vec![&env, symbol_short!("v1"), symbol_short!("withdraw"), id.into_val(&env)],
+        "withdrawn event must have v1 schema version and stream_id"
+    );
+
+    // Test stream_status_changed event
+    client.pause_stream(&employer, &id);
+    let events = env.events().all();
+    let status_event = events.iter().find(|(_, topics, _)| {
+        topics.get(1) == Some(&symbol_short!("status").into_val(&env))
+    }).unwrap();
+    assert_eq!(
+        status_event.1,
+        vec![&env, symbol_short!("v1"), symbol_short!("status"), id.into_val(&env)],
+        "stream_status_changed event must have v1 schema version and stream_id"
+    );
+
+    // Test topped_up event
+    client.top_up(&employer, &id, &1000);
+    let events = env.events().all();
+    let topup_event = events.iter().find(|(_, topics, _)| {
+        topics.get(1) == Some(&symbol_short!("topup").into_val(&env))
+    }).unwrap();
+    assert_eq!(
+        topup_event.1,
+        vec![&env, symbol_short!("v1"), symbol_short!("topup"), id.into_val(&env)],
+        "topped_up event must have v1 schema version and stream_id"
+    );
+
+    // Test rate_updated event
+    client.update_rate(&employer, &id, &2);
+    let events = env.events().all();
+    let rate_event = events.iter().find(|(_, topics, _)| {
+        topics.get(1) == Some(&symbol_short!("rate_upd").into_val(&env))
+    }).unwrap();
+    assert_eq!(
+        rate_event.1,
+        vec![&env, symbol_short!("v1"), symbol_short!("rate_upd"), id.into_val(&env)],
+        "rate_updated event must have v1 schema version and stream_id"
+    );
+
+    // Test contract_paused event
+    client.pause_contract(&admin);
+    let events = env.events().all();
+    let paused_event = events.iter().find(|(_, topics, _)| {
+        topics.get(1) == Some(&symbol_short!("paused").into_val(&env))
+    }).unwrap();
+    assert_eq!(
+        paused_event.1,
+        vec![&env, symbol_short!("v1"), symbol_short!("paused"),],
+        "contract_paused event must have v1 schema version"
     );
 }
