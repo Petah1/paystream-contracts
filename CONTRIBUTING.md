@@ -286,6 +286,20 @@ make lint        # clippy -D warnings
 make test        # cargo test
 ```
 
+### Pre-commit hooks (recommended)
+
+To avoid CI failures due to formatting or linting issues, install the pre-commit hook that automatically runs `cargo fmt --check` and `cargo clippy` before each commit:
+
+```bash
+make setup-hooks
+```
+
+The hook will prevent commits that fail formatting or linting checks. If you need to bypass the hook temporarily (e.g., for a work-in-progress commit), use:
+
+```bash
+git commit --no-verify
+```
+
 ### Branch naming
 
 Branch from `main` using the pattern `<type>/<short-description>`:

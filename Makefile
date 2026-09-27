@@ -1,4 +1,4 @@
-.PHONY: build test integration-test fmt fmt-check lint deny clean deploy-local deploy-testnet setup
+.PHONY: build test integration-test fmt fmt-check lint deny clean deploy-local deploy-testnet setup setup-hooks
 
 build:
 	stellar contract build
@@ -47,3 +47,11 @@ setup:
 	@echo ""
 	@echo "Setup complete! You can now run 'make test' to verify your installation."
 	@echo "Note: You may need to run 'source $$HOME/.cargo/env' or restart your terminal for Rust to be available in new shell sessions."
+
+setup-hooks:
+	@echo "Installing pre-commit hook..."
+	@cp scripts/pre-commit-hook.sh .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "✓ Pre-commit hook installed successfully."
+	@echo "The hook will run 'cargo fmt --check' and 'cargo clippy' before each commit."
+	@echo "To skip the hook, use: git commit --no-verify"
