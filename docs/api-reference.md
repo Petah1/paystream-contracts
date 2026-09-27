@@ -684,6 +684,46 @@ stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
 
 ---
 
+### `save_template`
+
+```rust
+fn save_template(env: Env, employer: Address, template_id: u32, params: StreamParams)
+```
+
+Stores reusable stream parameters under `(employer, template_id)` in persistent storage (TTL extended on every save/load). Overwrites an existing template with the same ID. `params.employee` is ignored when creating from the template. Requires `employer` auth.
+
+### `create_stream_from_template`
+
+```rust
+fn create_stream_from_template(env: Env, employer: Address, employee: Address, template_id: u32) -> u64
+```
+
+Creates a stream for `employee` using the template's token, deposit, rate and stop time. Same validation and errors as `create_stream`, plus **E028** if the template does not exist.
+
+### `list_templates`
+
+```rust
+fn list_templates(env: Env, employer: Address) -> Vec<(u32, StreamParams)>
+```
+
+Returns every template saved by `employer` in the order first saved.
+
+### `receipt_owner`
+
+```rust
+fn receipt_owner(env: Env, stream_id: u64) -> Address
+```
+
+Returns the current holder of the stream receipt, the only address allowed to `withdraw`. A receipt is minted to the employee on `create_stream` / `create_streams_batch`. See [nft-receipts.md](nft-receipts.md).
+
+### `transfer_receipt`
+
+```rust
+fn transfer_receipt(env: Env, from: Address, to: Address, stream_id: u64)
+```
+
+Transfers the receipt (and the right to future withdrawals) from `from` to `to`. Requires `from` auth. Errors: **E015** stream not found, **E029** `from` is not the holder. Emits `("receipt", stream_id) → (from, to)`.
+
 ### `upgrade`
 
 Admin upgrades the contract WASM in-place.
@@ -992,6 +1032,22 @@ stellar contract invoke --id <TOKEN_ID> --source <NEW_ADMIN_KEY> --network testn
 
 ---
 
+### `upgrade` (token)
+
+```rust
+fn upgrade(env: Env, new_wasm_hash: BytesN<32>, nonce: u64)
+```
+
+Admin replaces the token WASM in-place; balances and total supply are preserved. Requires admin auth; panics with `invalid nonce` if `nonce` ≠ `admin_nonce()`.
+
+### `migrate` (token)
+
+```rust
+fn migrate(env: Env, admin: Address)
+```
+
+Post-upgrade no-op hook. Requires `admin` auth and that it matches the stored admin.
+
 ### `burn`
 
 Burn tokens from the caller's own balance, reducing total supply.
@@ -1094,6 +1150,9 @@ Emitted by `update_rate` when the employer changes the stream's `rate_per_second
 | E007 | `ERR_BELOW_MIN_DEPOSIT` | Deposit below minimum |
 | E008 | `ERR_INVALID_RATE` | `rate_per_second` exceeds maximum (1,000,000,000) |
 | E009 | `ERR_BAD_NONCE` | Invalid admin nonce |
+| E016 | `ERR_NOT_EMPLOYEE` | Caller does not hold the stream receipt (`withdraw`) |
+| E028 | `ERR_TEMPLATE_NOT_FOUND` | No template saved under this ID for the employer |
+| E029 | `ERR_NOT_RECEIPT_OWNER` | Caller does not own the stream receipt |
 | T001 | `ERR_OVERFLOW` (token) | Token arithmetic overflow |
 
 ---

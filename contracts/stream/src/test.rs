@@ -1787,3 +1787,196 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// PROD-02 – batch creation consolidates transfers per token
+// ---------------------------------------------------------------------------
+
+fn batch_params(
+    env: &Env,
+    token: &Address,
+    n: u32,
+) -> soroban_sdk::Vec<crate::types::StreamParams> {
+    let mut v = soroban_sdk::Vec::new(env);
+    for _ in 0..n {
+        v.push_back(crate::types::StreamParams {
+            employee: Address::generate(env),
+            token: token.clone(),
+            deposit: 10_000,
+            rate_per_second: 1,
+            stop_time: 0,
+        });
+    }
+    v
+}
+
+#[test]
+fn test_batch_single_token_single_stream() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    let token = paystream_token::TokenContractClient::new(&env, &token_id);
+    client.initialize(&admin);
+
+    let ids = client.create_streams_batch(&employer, &batch_params(&env, &token_id, 1));
+    assert_eq!(ids.len(), 1);
+    assert_eq!(token.balance(&client.address), 10_000);
+    assert_eq!(client.get_stream(&ids.get(0).unwrap()).deposit, 10_000);
+}
+
+#[test]
+fn test_batch_same_token_consolidated() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    let token = paystream_token::TokenContractClient::new(&env, &token_id);
+    client.initialize(&admin);
+
+    let before = token.balance(&employer);
+    let ids = client.create_streams_batch(&employer, &batch_params(&env, &token_id, 5));
+    assert_eq!(ids.len(), 5);
+    assert_eq!(token.balance(&client.address), 50_000);
+    assert_eq!(token.balance(&employer), before - 50_000);
+    for id in ids.iter() {
+        let s = client.get_stream(&id);
+        assert_eq!(s.deposit, 10_000);
+        assert_eq!(s.status, StreamStatus::Active);
+    }
+}
+
+#[test]
+fn test_batch_mixed_tokens() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let token_a = setup_token(&env, &employer);
+    let token_b = setup_token(&env, &employer);
+    client.initialize(&admin);
+
+    let mut params = batch_params(&env, &token_a, 2);
+    for p in batch_params(&env, &token_b, 3).iter() {
+        params.push_back(p);
+    }
+    let ids = client.create_streams_batch(&employer, &params);
+    assert_eq!(ids.len(), 5);
+
+    let a = paystream_token::TokenContractClient::new(&env, &token_a);
+    let b = paystream_token::TokenContractClient::new(&env, &token_b);
+    assert_eq!(a.balance(&client.address), 20_000);
+    assert_eq!(b.balance(&client.address), 30_000);
+    assert_eq!(client.get_stream(&ids.get(0).unwrap()).token, token_a);
+    assert_eq!(client.get_stream(&ids.get(4).unwrap()).token, token_b);
+}
+
+// ---------------------------------------------------------------------------
+// PROD-01 – transferable stream receipts
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_receipt_minted_to_employee_and_transferable() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    let token = paystream_token::TokenContractClient::new(&env, &token_id);
+    client.initialize(&admin);
+
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    assert_eq!(client.receipt_owner(&id), employee);
+
+    client.transfer_receipt(&employee, &buyer, &id);
+    assert_eq!(client.receipt_owner(&id), buyer);
+
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    assert_eq!(client.withdraw(&buyer, &id), 100);
+    assert_eq!(token.balance(&buyer), 100);
+    // Previous holder's withdraw_all no longer touches the stream.
+    assert_eq!(client.withdraw_all(&employee).len(), 0);
+
+    // Cancellation pays accrued earnings to the receipt holder.
+    env.ledger().with_mut(|l| l.timestamp += 50);
+    client.cancel_stream(&employer, &id);
+    assert_eq!(token.balance(&buyer), 150);
+    assert_eq!(token.balance(&employee), 0);
+}
+
+#[test]
+#[should_panic(expected = "E016")]
+fn test_withdraw_by_previous_receipt_holder_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&admin);
+
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    client.transfer_receipt(&employee, &Address::generate(&env), &id);
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    client.withdraw(&employee, &id);
+}
+
+#[test]
+#[should_panic(expected = "E029")]
+fn test_transfer_receipt_non_owner_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&admin);
+
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    client.transfer_receipt(&employer, &Address::generate(&env), &id);
+}
+
+// ---------------------------------------------------------------------------
+// PROD-03 – stream templates
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_templates_save_list_and_create() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+    client.initialize(&admin);
+
+    let params = crate::types::StreamParams {
+        employee: Address::generate(&env),
+        token: token_id.clone(),
+        deposit: 2_592_000,
+        rate_per_second: 1,
+        stop_time: 0,
+    };
+    client.save_template(&employer, &7, &params);
+    client.save_template(&employer, &7, &params); // overwrite does not duplicate
+    client.save_template(&employer, &8, &params);
+
+    let list = client.list_templates(&employer);
+    assert_eq!(list.len(), 2);
+    assert_eq!(list.get(0).unwrap().0, 7);
+    assert_eq!(list.get(1).unwrap().0, 8);
+    assert_eq!(client.list_templates(&employee).len(), 0);
+
+    let id = client.create_stream_from_template(&employer, &employee, &7);
+    let s = client.get_stream(&id);
+    assert_eq!(s.employee, employee);
+    assert_eq!(s.deposit, 2_592_000);
+    assert_eq!(s.rate_per_second, 1);
+    assert_eq!(s.token, token_id);
+}
+
+#[test]
+#[should_panic(expected = "E028")]
+fn test_create_from_missing_template_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    client.create_stream_from_template(&Address::generate(&env), &Address::generate(&env), &1);
+}

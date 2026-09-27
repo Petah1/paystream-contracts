@@ -212,3 +212,66 @@ fn test_burn_from_expired_allowance_rejected() {
     env.ledger().with_mut(|l| l.sequence_number = exp + 1);
     client.burn_from(&spender, &admin, &100);
 }
+
+// ---------------------------------------------------------------------------
+// TOK-10 – upgrade mechanism
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic]
+fn test_upgrade_non_admin_rejected() {
+    let env = Env::default();
+    let id = env.register(TokenContract, ());
+    let client = TokenContractClient::new(&env, &id);
+    let admin = Address::generate(&env);
+    env.mock_all_auths();
+    client.initialize(&admin, &1_000);
+    // Drop mocked auths: upgrade must require the stored admin's signature.
+    env.set_auths(&[]);
+    client.upgrade(&soroban_sdk::BytesN::from_array(&env, &[0u8; 32]), &0);
+}
+
+#[test]
+#[should_panic(expected = "invalid nonce")]
+fn test_upgrade_wrong_nonce_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &1_000);
+    client.upgrade(&soroban_sdk::BytesN::from_array(&env, &[0u8; 32]), &5);
+}
+
+#[test]
+#[should_panic(expected = "not admin")]
+fn test_migrate_non_admin_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &1_000);
+    client.migrate(&Address::generate(&env));
+}
+
+// Requires a release WASM build of the token contract:
+//   cargo build -p paystream-token --target wasm32v1-none --release
+//   cargo test -p paystream-token --features wasm-tests
+#[cfg(feature = "wasm-tests")]
+mod token_wasm {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/paystream_token.wasm");
+}
+
+#[cfg(feature = "wasm-tests")]
+#[test]
+fn test_upgrade_preserves_balances_and_supply() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    client.initialize(&admin, &1_000);
+    client.transfer(&admin, &user, &250);
+
+    let new_wasm_hash = env.deployer().upload_contract_wasm(token_wasm::WASM);
+    client.upgrade(&new_wasm_hash, &0);
+    client.migrate(&admin);
+
+    assert_eq!(client.total_supply(), 1_000);
+    assert_eq!(client.balance(&admin), 750);
+    assert_eq!(client.balance(&user), 250);
+    assert_eq!(client.admin_nonce(), 1);
+}

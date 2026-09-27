@@ -76,6 +76,12 @@ pub enum DataKey {
     /// Set by propose_emergency_drain; cleared by emergency_drain after execution.
     /// See SEC-03 / issue #32.
     PendingDrain,
+    /// Saved stream template: (employer, template_id) → StreamParams (PROD-03).
+    Template(Address, u32),
+    /// Index: employer address → Vec<u32> of saved template IDs (PROD-03).
+    TemplateIds(Address),
+    /// Current holder of a stream's transferable receipt (PROD-01).
+    ReceiptOwner(u64),
 }
 
 /// Contract error codes – panic messages reference these names so callers can
@@ -134,3 +140,7 @@ pub const ERR_BAD_PENDING_NONCE: &str = "E024: invalid pending admin nonce";
 pub const ERR_DRAIN_NOT_PAUSED: &str = "E026: contract must be paused before emergency drain";
 /// E027: no pending emergency drain proposal exists (SEC-03 / #32).
 pub const ERR_NO_PENDING_DRAIN: &str = "E027: no pending emergency drain proposal";
+/// E028: no template saved under this ID for the employer (PROD-03).
+pub const ERR_TEMPLATE_NOT_FOUND: &str = "E028: template not found";
+/// E029: caller does not own the stream receipt (PROD-01).
+pub const ERR_NOT_RECEIPT_OWNER: &str = "E029: caller does not own the stream receipt";

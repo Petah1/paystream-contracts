@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::types::{
-    DataKey, PendingUpgrade, Stream, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_NONCE, ERR_OVERFLOW,
+    DataKey, PendingUpgrade, Stream, StreamParams, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_NONCE,
+    ERR_OVERFLOW,
 };
 use soroban_sdk::{Address, BytesN, Env, Vec};
 
@@ -230,4 +231,73 @@ pub fn get_pending_upgrade(env: &Env) -> Option<PendingUpgrade> {
 /// Remove the pending upgrade record.
 pub fn clear_pending_upgrade(env: &Env) {
     env.storage().instance().remove(&DataKey::PendingUpgrade);
+}
+
+// ---------------------------------------------------------------------------
+// Stream templates (PROD-03)
+// ---------------------------------------------------------------------------
+
+/// Save `params` under `(employer, template_id)`, overwriting any existing entry.
+pub fn save_template(env: &Env, employer: &Address, template_id: u32, params: &StreamParams) {
+    let key = DataKey::Template(employer.clone(), template_id);
+    env.storage().persistent().set(&key, params);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+
+    let ids_key = DataKey::TemplateIds(employer.clone());
+    let mut ids: Vec<u32> = env
+        .storage()
+        .persistent()
+        .get(&ids_key)
+        .unwrap_or_else(|| Vec::new(env));
+    if !ids.contains(template_id) {
+        ids.push_back(template_id);
+        env.storage().persistent().set(&ids_key, &ids);
+    }
+    env.storage()
+        .persistent()
+        .extend_ttl(&ids_key, TTL_THRESHOLD, TTL_EXTEND_TO);
+}
+
+/// Load a saved template, extending its TTL on access.
+pub fn load_template(env: &Env, employer: &Address, template_id: u32) -> Option<StreamParams> {
+    let key = DataKey::Template(employer.clone(), template_id);
+    let params = env.storage().persistent().get(&key);
+    if params.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+    params
+}
+
+/// Return the IDs of all templates saved by `employer`.
+pub fn get_template_ids(env: &Env, employer: &Address) -> Vec<u32> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TemplateIds(employer.clone()))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+// ---------------------------------------------------------------------------
+// Stream receipts (PROD-01)
+// ---------------------------------------------------------------------------
+
+/// Record `owner` as the holder of the receipt for `stream_id`.
+pub fn set_receipt_owner(env: &Env, stream_id: u64, owner: &Address) {
+    let key = DataKey::ReceiptOwner(stream_id);
+    env.storage().persistent().set(&key, owner);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+}
+
+/// Return the receipt holder for `stream`; falls back to the original
+/// employee for streams created before receipts existed.
+pub fn receipt_owner(env: &Env, stream: &Stream) -> Address {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ReceiptOwner(stream.id))
+        .unwrap_or_else(|| stream.employee.clone())
 }

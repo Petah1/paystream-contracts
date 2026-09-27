@@ -76,6 +76,31 @@ In summary:
 4. Run `test_reentrant_withdraw_rejected`.
 5. Update `docs/security/reentrancy-analysis.md` with the new SDK version and review date.
 
+## Token Contract Upgrades (TOK-10)
+
+The token contract supports the same in-place pattern. Balances, allowances,
+total supply and the admin nonce live in contract storage and survive the upgrade.
+
+```bash
+cargo build -p paystream-token --target wasm32v1-none --release
+stellar contract upload --wasm target/wasm32v1-none/release/paystream_token.wasm \
+  --source admin --network testnet
+# outputs: <NEW_WASM_HASH>
+
+# Read the current nonce, then upgrade
+stellar contract invoke --id <TOKEN_CONTRACT_ID> --source admin --network testnet -- admin_nonce
+stellar contract invoke --id <TOKEN_CONTRACT_ID> --source admin --network testnet \
+  -- upgrade --new_wasm_hash <NEW_WASM_HASH> --nonce <NONCE>
+
+# Confirm the new WASM is operational (no-op hook, admin only)
+stellar contract invoke --id <TOKEN_CONTRACT_ID> --source admin --network testnet \
+  -- migrate --admin <ADMIN_ADDRESS>
+```
+
+- `upgrade` requires the stored admin's auth and consumes the admin nonce shared with `mint`.
+- Never reorder or remove `TokenDataKey` variants; only append new ones.
+- Verify with `cargo test -p paystream-token --features wasm-tests` (requires the release WASM build).
+
 ## Soroban SDK Upgrades
 
 Bumping the `soroban-sdk` dependency itself is covered in [soroban-sdk-upgrade.md](soroban-sdk-upgrade.md).
