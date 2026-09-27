@@ -1,6 +1,7 @@
 # PayStream Contracts
 
 [![CI](https://github.com/veracindarella/paystream-contracts/actions/workflows/ci.yml/badge.svg)](https://github.com/veracindarella/paystream-contracts/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/veracindarella/paystream-contracts/branch/main/graph/badge.svg)](https://codecov.io/gh/veracindarella/paystream-contracts)
 [![cargo-deny](https://github.com/veracindarella/paystream-contracts/actions/workflows/deny.yml/badge.svg)](https://github.com/veracindarella/paystream-contracts/actions/workflows/deny.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 

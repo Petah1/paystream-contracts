@@ -337,6 +337,28 @@ make test          # run all tests
 cargo test <name>  # run a single test by name
 ```
 
+### Coverage
+
+Coverage is measured with [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) (compatible with Soroban/`no_std` crates) and reported by the `Coverage` workflow (`.github/workflows/coverage.yml`), which uploads `lcov.info` as a CI artifact and to Codecov.
+
+```bash
+cargo install cargo-llvm-cov
+make coverage      # print a per-file coverage summary
+```
+
+Target baseline: **>90% line coverage** for `contracts/stream` and `contracts/token`. New code should not lower coverage.
+
+### Mutation testing
+
+[`cargo-mutants`](https://mutants.rs) checks that tests actually assert on behaviour, not just execute code.
+
+```bash
+cargo install cargo-mutants
+make mutation-test # runs cargo mutants on the stream contract
+```
+
+Each surviving mutant must either be killed by a new test or documented as acceptable (e.g. equivalent mutations, or event/log-only code) in the PR that introduces it.
+
 ### Snapshot files
 
 Test snapshots in `test_snapshots/` are generated automatically by the SDK. Commit them alongside the test that produces them. If a snapshot changes unexpectedly, investigate before updating it — an unexpected snapshot diff often indicates a behaviour regression.

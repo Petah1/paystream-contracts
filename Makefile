@@ -1,4 +1,4 @@
-.PHONY: build test integration-test fmt fmt-check lint deny clean deploy-local deploy-testnet
+.PHONY: build test coverage mutation-test integration-test fmt fmt-check lint deny clean deploy-local deploy-testnet
 
 build:
 	stellar contract build
@@ -6,6 +6,12 @@ build:
 test:
 	cargo build -p paystream-stream --target wasm32v1-none --release
 	cargo test
+
+coverage:
+	cargo llvm-cov --workspace --summary-only
+
+mutation-test:
+	cargo mutants -p paystream-stream
 
 integration-test:
 	docker run -d --rm --name paystream-sandbox -p 8000:8000 stellar/quickstart:latest --local --enable-soroban-rpc

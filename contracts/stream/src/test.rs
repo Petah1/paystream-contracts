@@ -759,6 +759,42 @@ fn test_upgrade_preserves_stream_state() {
     assert_eq!(client.claimable(&id), 1000);
 }
 
+/// Admin nonce must survive WASM replacement and remain correct afterwards.
+#[cfg(feature = "wasm-tests")]
+#[test]
+fn test_upgrade_preserves_admin_nonce() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.set_min_deposit(&admin, &0, &100);
+    assert_eq!(client.admin_nonce(), 1);
+
+    let new_wasm_hash = env.deployer().upload_contract_wasm(stream_wasm::WASM);
+    client.upgrade(&new_wasm_hash, &1);
+
+    // upgrade itself consumes nonce 1, so the next expected nonce is 2.
+    assert_eq!(client.admin_nonce(), 2);
+    client.set_min_deposit(&admin, &2, &200);
+    assert_eq!(client.admin_nonce(), 3);
+}
+
+/// A previously used nonce must still be rejected after an upgrade.
+#[cfg(feature = "wasm-tests")]
+#[test]
+#[should_panic(expected = "E009")]
+fn test_upgrade_nonce_replay_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.set_min_deposit(&admin, &0, &100);
+    let new_wasm_hash = env.deployer().upload_contract_wasm(stream_wasm::WASM);
+    client.upgrade(&new_wasm_hash, &1);
+
+    client.set_min_deposit(&admin, &0, &200);
+}
+
 #[test]
 fn test_migrate_noop() {
     let (env, client) = setup();
@@ -1786,4 +1822,38 @@ fn test_resume_stream_resets_last_withdraw_time() {
         0,
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
+}
+
+// ---------------------------------------------------------------------------
+// TEST-11 – Concurrent streams between the same employer/employee pair
+// ---------------------------------------------------------------------------
+
+/// Withdrawing from one stream must not affect another stream between the
+/// same employer and employee in a different token.
+#[test]
+fn test_concurrent_streams_same_pair_independent() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_a = setup_token(&env, &employer);
+    let token_b = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    let id_a = client.create_stream(&employer, &employee, &token_a, &10_000, &10, &0);
+    let id_b = client.create_stream(&employer, &employee, &token_b, &10_000, &5, &0);
+
+    env.ledger().with_mut(|l| l.timestamp += 100);
+
+    assert_eq!(client.withdraw(&employee, &id_a), 1000);
+
+    let b = client.get_stream(&id_b);
+    assert_eq!(b.withdrawn, 0);
+    assert_eq!(client.claimable(&id_b), 500);
+    assert_eq!(client.claimable(&id_a), 0);
+
+    let ids = client.streams_by_employee(&employee);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(id_a));
+    assert!(ids.contains(id_b));
 }
