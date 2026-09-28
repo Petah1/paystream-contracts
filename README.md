@@ -269,7 +269,9 @@ We welcome contributions from the community.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md). Report vulnerabilities to `security@paystream.example` — not via public issues.
+See [SECURITY.md](SECURITY.md) for the full security policy and vulnerability reporting.
+To rotate the admin keypair, follow the [key rotation runbook](docs/security/key-rotation.md).
+Report vulnerabilities to `security@paystream.example` — not via public issues.
 
 ## License
 

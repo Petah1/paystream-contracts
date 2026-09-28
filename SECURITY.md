@@ -26,6 +26,14 @@ deployment. See [audits/remediation.md](audits/remediation.md) for the full stat
 
 ---
 
+## Key Rotation
+
+If the admin keypair needs to be rotated (planned or emergency), follow the
+step-by-step runbook in
+[docs/security/key-rotation.md](docs/security/key-rotation.md).
+
+---
+
 ## Security Design Notes
 
 - All state-changing functions require explicit `require_auth()` from the relevant party
