@@ -72,3 +72,10 @@ pub fn upgrade_cancelled(env: &Env) {
     env.events()
         .publish((symbol_short!("upg_cncl"),), ());
 }
+
+pub fn stream_transferred(env: &Env, stream_id: u64, old_employer: &Address, new_employer: &Address) {
+    env.events().publish(
+        (symbol_short!("xfr_strm"), stream_id),
+        (old_employer.clone(), new_employer.clone()),
+    );
+}

@@ -163,6 +163,31 @@ pub fn get_employer_streams(env: &Env, employer: &Address) -> Vec<u64> {
         .unwrap_or_else(|| Vec::new(env))
 }
 
+/// Remove `stream_id` from the employer's stream index.
+///
+/// Used by `transfer_stream` to deindex the old employer. Performs a linear
+/// scan of the stored Vec and rebuilds it without the target ID. O(n) where
+/// n is the number of streams owned by the employer; acceptable because
+/// employers are expected to have at most hundreds of concurrent streams.
+pub fn remove_employer_stream(env: &Env, employer: &Address, stream_id: u64) {
+    let key = DataKey::EmployerStreams(employer.clone());
+    let ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    let mut new_ids: Vec<u64> = Vec::new(env);
+    for id in ids.iter() {
+        if id != stream_id {
+            new_ids.push_back(id);
+        }
+    }
+    env.storage().persistent().set(&key, &new_ids);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+}
+
 /// Append `stream_id` to the employee's stream index.
 pub fn index_employee_stream(env: &Env, employee: &Address, stream_id: u64) {
     let key = DataKey::EmployeeStreams(employee.clone());
