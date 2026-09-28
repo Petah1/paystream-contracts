@@ -1787,3 +1787,85 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// TEST-05: Snapshot test for top_up (issue #54)
+// ---------------------------------------------------------------------------
+
+/// Snapshot: create_stream → top_up → verify deposit increased.
+///
+/// Covers the core acceptance criterion: the deposit stored on the stream
+/// reflects the additional funds after a top-up, and the stream remains
+/// Active with the original rate unchanged.
+#[test]
+fn test_top_up_snapshot() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // Create a stream with 10_000 deposit at 10 tokens/s.
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+
+    // Advance time so some tokens accrue before the top-up.
+    env.ledger().with_mut(|l| l.timestamp += 100);
+
+    // Top up with an additional 5_000 tokens.
+    client.top_up(&employer, &id, &5_000);
+
+    // Deposit must now equal 15_000.
+    let s = client.get_stream(&id);
+    assert_eq!(s.deposit, 15_000, "deposit must increase by top-up amount");
+    assert_eq!(s.rate_per_second, 10, "rate must remain unchanged after top-up");
+    assert_eq!(s.status, StreamStatus::Active, "stream must stay Active after top-up");
+    // Withdrawn still 0 — no withdraw has been called yet.
+    assert_eq!(s.withdrawn, 0);
+
+    // Claimable is still based on elapsed time × rate (unchanged by top-up).
+    assert_eq!(client.claimable(&id), 1_000); // 100s * 10/s
+}
+
+/// Snapshot: top_up on a stream near exhaustion prevents premature Exhausted.
+///
+/// Creates a small-deposit stream that would exhaust quickly, then tops it
+/// up before it runs dry and verifies the stream stays Active and claimable
+/// continues to accrue beyond the original exhaustion point.
+#[test]
+fn test_top_up_prevents_premature_exhaustion_snapshot() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    client.set_min_deposit(&admin, &0, &100);
+
+    // Small deposit: 500 tokens at 10/s → would exhaust in 50 seconds.
+    let id = client.create_stream(&employer, &employee, &token_id, &500, &10, &0);
+
+    // Advance to just before exhaustion (45 seconds).
+    env.ledger().with_mut(|l| l.timestamp += 45);
+
+    // Top up before the stream runs out.
+    client.top_up(&employer, &id, &1_000);
+
+    // Deposit is now 1_500.
+    let s = client.get_stream(&id);
+    assert_eq!(s.deposit, 1_500);
+    assert_eq!(s.status, StreamStatus::Active, "stream must still be Active after top-up");
+
+    // Advance well past the original exhaustion point (50s) to 100s total.
+    env.ledger().with_mut(|l| l.timestamp += 55);
+
+    // Stream should still be Active (not Exhausted) because top-up extended it.
+    assert_eq!(
+        client.stream_status(&id),
+        StreamStatus::Active,
+        "stream must remain Active past the original exhaustion point after top-up"
+    );
+    // Total elapsed: 100s × 10/s = 1_000 claimable; deposit=1_500 so still room.
+    assert_eq!(client.claimable(&id), 1_000);
+}
