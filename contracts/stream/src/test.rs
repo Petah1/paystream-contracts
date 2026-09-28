@@ -1787,3 +1787,45 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// SC-16 – min_deposit() public query function
+// ---------------------------------------------------------------------------
+
+/// min_deposit() returns the default minimum deposit (10_000) before
+/// set_min_deposit has been called.
+#[test]
+fn test_min_deposit_returns_default() {
+    use crate::storage::DEFAULT_MIN_DEPOSIT;
+
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    assert_eq!(client.min_deposit(), DEFAULT_MIN_DEPOSIT);
+}
+
+/// min_deposit() returns the value set by set_min_deposit.
+#[test]
+fn test_min_deposit_returns_set_value() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.set_min_deposit(&admin, &0, &50_000);
+    assert_eq!(client.min_deposit(), 50_000);
+}
+
+/// min_deposit() reflects subsequent updates to the minimum deposit.
+#[test]
+fn test_min_deposit_reflects_update() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.set_min_deposit(&admin, &0, &1_000);
+    assert_eq!(client.min_deposit(), 1_000);
+
+    client.set_min_deposit(&admin, &1, &5_000);
+    assert_eq!(client.min_deposit(), 5_000);
+}

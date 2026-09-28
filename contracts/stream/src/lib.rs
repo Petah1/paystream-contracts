@@ -1027,6 +1027,19 @@ impl StreamContract {
         get_employee_streams(&env, &employee)
     }
 
+    /// Return the current minimum deposit enforced on `create_stream`.
+    ///
+    /// Off-chain clients can call this to determine the minimum deposit
+    /// required before constructing a `create_stream` transaction. Returns
+    /// `DEFAULT_MIN_DEPOSIT` (10 000) if `set_min_deposit` has never been
+    /// called.
+    ///
+    /// # Returns
+    /// Minimum deposit as `i128`.
+    pub fn min_deposit(env: Env) -> i128 {
+        get_min_deposit(&env)
+    }
+
     /// Return whether the contract is currently paused.
     ///
     /// # Returns
