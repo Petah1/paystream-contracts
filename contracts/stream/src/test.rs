@@ -828,6 +828,31 @@ fn test_initialize_cannot_be_called_twice() {
 }
 
 // ---------------------------------------------------------------------------
+// Issue #20 – admin() getter
+// ---------------------------------------------------------------------------
+
+/// admin() returns the address set during initialize.
+#[test]
+fn test_admin_returns_current_admin() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    assert_eq!(client.admin(), admin);
+}
+
+/// After a two-step admin transfer, admin() returns the new admin.
+#[test]
+fn test_admin_returns_new_admin_after_transfer() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    client.initialize(&admin);
+    client.propose_admin(&new_admin, &0);
+    client.accept_admin(&new_admin, &0);
+    assert_eq!(client.admin(), new_admin);
+}
+
+// ---------------------------------------------------------------------------
 // Issue #19 – Two-step admin transfer
 // ---------------------------------------------------------------------------
 

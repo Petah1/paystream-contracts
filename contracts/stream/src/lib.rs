@@ -1035,6 +1035,20 @@ impl StreamContract {
         get_paused(&env)
     }
 
+    /// Return the current contract admin address.
+    ///
+    /// Off-chain tools use this to discover the admin without decoding raw
+    /// ledger state.
+    ///
+    /// # Returns
+    /// The admin [`Address`].
+    ///
+    /// # Errors
+    /// - Panics with "admin not set" (E021) if the contract has not been initialised.
+    pub fn admin(env: Env) -> Address {
+        get_admin(&env)
+    }
+
     /// Return the number of streams owned by `employer`.
     ///
     /// Equivalent to `streams_by_employer(employer).len()` but avoids loading
