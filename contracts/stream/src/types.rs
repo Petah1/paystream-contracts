@@ -27,6 +27,11 @@ pub struct Stream {
     pub stop_time: u64,        // 0 = no end, else hard stop timestamp
     pub last_withdraw_time: u64,
     pub status: StreamStatus,
+    /// Tokens accrued at the previous rate and not yet withdrawn.
+    /// Populated by `update_rate` before changing `rate_per_second` so that
+    /// the employee can still claim earnings from before the rate change.
+    /// Cleared (decremented) when `withdraw` pays it out.
+    pub pending_accrual: i128,
     /// Reentrancy guard: true while a withdraw cross-contract call is in flight.
     /// Soroban executes contracts atomically within a single transaction, so
     /// cross-contract callbacks cannot interleave with the current frame.

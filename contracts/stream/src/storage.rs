@@ -105,6 +105,9 @@ pub fn set_min_deposit(env: &Env, amount: i128) {
 
 /// Tokens earned by employee up to `now` that have not yet been withdrawn.
 ///
+/// Includes any `pending_accrual` banked by a previous `update_rate` call
+/// so that earnings from before a rate change are not lost.
+///
 /// All arithmetic uses checked or saturating operations to prevent overflow
 /// with large `rate_per_second` or `elapsed` values (see issue #2).
 pub fn claimable_amount(stream: &Stream, now: u64) -> i128 {
@@ -127,6 +130,12 @@ pub fn claimable_amount(stream: &Stream, now: u64) -> i128 {
         .checked_mul(stream.rate_per_second)
         .expect(ERR_OVERFLOW);
 
+    // Add any accrual banked by a previous update_rate call so that earnings
+    // from before a rate change are not lost.
+    let total_earned = earned
+        .checked_add(stream.pending_accrual)
+        .expect(ERR_OVERFLOW);
+
     // remaining can never be negative for a well-formed stream, but clamp to 0
     // defensively.
     let remaining = stream
@@ -135,7 +144,7 @@ pub fn claimable_amount(stream: &Stream, now: u64) -> i128 {
         .unwrap_or(0)
         .max(0);
 
-    earned.min(remaining).max(0)
+    total_earned.min(remaining).max(0)
 }
 
 /// Append `stream_id` to the employer's stream index.
