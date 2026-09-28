@@ -1787,3 +1787,121 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// TEST-03: Snapshot test for create_streams_batch (issue #52)
+// ---------------------------------------------------------------------------
+
+/// Snapshot: create_streams_batch with 3 streams — verifies ledger state,
+/// all 3 IDs returned in order, stream_count == 3, each stream Active.
+#[test]
+fn test_create_streams_batch_snapshot() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(StreamContract, ());
+    let client = StreamContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee1 = Address::generate(&env);
+    let employee2 = Address::generate(&env);
+    let employee3 = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // Lower min_deposit so small per-stream deposits are accepted.
+    client.set_min_deposit(&admin, &0, &100);
+
+    let mut params: soroban_sdk::Vec<crate::types::StreamParams> =
+        soroban_sdk::Vec::new(&env);
+    params.push_back(crate::types::StreamParams {
+        employee: employee1.clone(),
+        token: token_id.clone(),
+        deposit: 3_600,
+        rate_per_second: 1,
+        stop_time: 0,
+    });
+    params.push_back(crate::types::StreamParams {
+        employee: employee2.clone(),
+        token: token_id.clone(),
+        deposit: 7_200,
+        rate_per_second: 2,
+        stop_time: 0,
+    });
+    params.push_back(crate::types::StreamParams {
+        employee: employee3.clone(),
+        token: token_id.clone(),
+        deposit: 10_000,
+        rate_per_second: 5,
+        stop_time: 0,
+    });
+
+    let ids = client.create_streams_batch(&employer, &params);
+
+    // All 3 IDs returned in order.
+    assert_eq!(ids.len(), 3);
+    assert_eq!(ids.get(0).unwrap(), 1);
+    assert_eq!(ids.get(1).unwrap(), 2);
+    assert_eq!(ids.get(2).unwrap(), 3);
+
+    // stream_count reflects all 3 streams.
+    assert_eq!(client.stream_count(), 3);
+
+    // Each stream is Active with the correct deposit and rate.
+    let s1 = client.get_stream(&1);
+    assert_eq!(s1.status, StreamStatus::Active);
+    assert_eq!(s1.deposit, 3_600);
+    assert_eq!(s1.rate_per_second, 1);
+    assert_eq!(s1.withdrawn, 0);
+
+    let s2 = client.get_stream(&2);
+    assert_eq!(s2.status, StreamStatus::Active);
+    assert_eq!(s2.deposit, 7_200);
+    assert_eq!(s2.rate_per_second, 2);
+    assert_eq!(s2.withdrawn, 0);
+
+    let s3 = client.get_stream(&3);
+    assert_eq!(s3.status, StreamStatus::Active);
+    assert_eq!(s3.deposit, 10_000);
+    assert_eq!(s3.rate_per_second, 5);
+    assert_eq!(s3.withdrawn, 0);
+
+}
+
+/// Snapshot: edge case — batch with exactly 1 stream (minimum valid batch).
+#[test]
+fn test_create_streams_batch_single_stream_snapshot() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(StreamContract, ());
+    let client = StreamContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    client.set_min_deposit(&admin, &0, &100);
+
+    let mut params: soroban_sdk::Vec<crate::types::StreamParams> =
+        soroban_sdk::Vec::new(&env);
+    params.push_back(crate::types::StreamParams {
+        employee: employee.clone(),
+        token: token_id.clone(),
+        deposit: 5_000,
+        rate_per_second: 10,
+        stop_time: 0,
+    });
+
+    let ids = client.create_streams_batch(&employer, &params);
+
+    assert_eq!(ids.len(), 1);
+    assert_eq!(ids.get(0).unwrap(), 1);
+    assert_eq!(client.stream_count(), 1);
+
+    let s = client.get_stream(&1);
+    assert_eq!(s.status, StreamStatus::Active);
+    assert_eq!(s.deposit, 5_000);
+    assert_eq!(s.rate_per_second, 10);
+}
