@@ -1787,3 +1787,76 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// SC-15 – TTL extension on read for employer/employee indexes
+// ---------------------------------------------------------------------------
+
+/// get_employer_streams (streams_by_employer) must extend TTL on read so that
+/// an employer's index does not expire during long-running streams with no new
+/// stream creation activity.
+///
+/// The Soroban test environment does not expose TTL counters directly, but we
+/// can verify the index remains readable (i.e. extend_ttl does not panic) and
+/// returns the correct IDs after being read multiple times.
+#[test]
+fn test_streams_by_employer_read_extends_ttl() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee1 = Address::generate(&env);
+    let employee2 = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    client.set_min_deposit(&admin, &0, &100);
+
+    let id1 = client.create_stream(&employer, &employee1, &token_id, &1_000, &1, &0);
+    let id2 = client.create_stream(&employer, &employee2, &token_id, &1_000, &1, &0);
+
+    // Read the index multiple times; each call should extend TTL (no panic).
+    let first_read = client.streams_by_employer(&employer);
+    assert_eq!(first_read.len(), 2);
+    assert!(first_read.contains(id1));
+    assert!(first_read.contains(id2));
+
+    env.ledger().with_mut(|l| l.timestamp += 1_000);
+
+    // Second read after time has passed — must still return correct data and
+    // not panic inside extend_ttl.
+    let second_read = client.streams_by_employer(&employer);
+    assert_eq!(second_read.len(), 2);
+    assert!(second_read.contains(id1));
+    assert!(second_read.contains(id2));
+}
+
+/// get_employee_streams (streams_by_employee) must extend TTL on read so that
+/// an employee's index does not expire during long-running streams.
+#[test]
+fn test_streams_by_employee_read_extends_ttl() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    client.set_min_deposit(&admin, &0, &100);
+
+    let id1 = client.create_stream(&employer, &employee, &token_id, &1_000, &1, &0);
+    let id2 = client.create_stream(&employer, &employee, &token_id, &1_000, &1, &0);
+
+    // First read — verifies correct data and triggers TTL extension.
+    let first_read = client.streams_by_employee(&employee);
+    assert_eq!(first_read.len(), 2);
+    assert!(first_read.contains(id1));
+    assert!(first_read.contains(id2));
+
+    env.ledger().with_mut(|l| l.timestamp += 1_000);
+
+    // Second read after time has passed — must still be correct and not panic.
+    let second_read = client.streams_by_employee(&employee);
+    assert_eq!(second_read.len(), 2);
+    assert!(second_read.contains(id1));
+    assert!(second_read.contains(id2));
+}

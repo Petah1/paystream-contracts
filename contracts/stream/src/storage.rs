@@ -155,12 +155,23 @@ pub fn index_employer_stream(env: &Env, employer: &Address, stream_id: u64) {
 }
 
 /// Return all stream IDs owned by `employer`.
+///
+/// Extends TTL on read (matching the `load_stream` pattern) so that the index
+/// does not expire for employers with long-running streams and no new stream
+/// creation activity (SC-15).
 pub fn get_employer_streams(env: &Env, employer: &Address) -> Vec<u64> {
     let key = DataKey::EmployerStreams(employer.clone());
-    env.storage()
+    let ids: Vec<u64> = env
+        .storage()
         .persistent()
         .get(&key)
-        .unwrap_or_else(|| Vec::new(env))
+        .unwrap_or_else(|| Vec::new(env));
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+    ids
 }
 
 /// Append `stream_id` to the employee's stream index.
@@ -179,12 +190,23 @@ pub fn index_employee_stream(env: &Env, employee: &Address, stream_id: u64) {
 }
 
 /// Return all stream IDs paying `employee`.
+///
+/// Extends TTL on read (matching the `load_stream` pattern) so that the index
+/// does not expire for employees with long-running streams and no new stream
+/// creation activity (SC-15).
 pub fn get_employee_streams(env: &Env, employee: &Address) -> Vec<u64> {
     let key = DataKey::EmployeeStreams(employee.clone());
-    env.storage()
+    let ids: Vec<u64> = env
+        .storage()
         .persistent()
         .get(&key)
-        .unwrap_or_else(|| Vec::new(env))
+        .unwrap_or_else(|| Vec::new(env));
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+    ids
 }
 
 // ---------------------------------------------------------------------------
