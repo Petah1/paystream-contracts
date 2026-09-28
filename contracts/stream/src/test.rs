@@ -1787,3 +1787,87 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// TEST-09 – Cancel a paused stream pays earned amount (issue #58)
+// ---------------------------------------------------------------------------
+
+/// When a stream is paused at T=100 and then cancelled at T=200 (while still
+/// paused), the employee must receive only the tokens earned during the active
+/// window [0, 100].  No additional tokens should accrue during the paused
+/// window [100, 200].
+///
+/// Scenario:
+///   - deposit = 10_000, rate = 10 tokens/s
+///   - stream created at T=0 (active)
+///   - paused at T=100  → earned_before_pause = 100 * 10 = 1_000
+///   - cancelled at T=200 (still paused)
+///       employee receives: 1_000
+///       employer refund:   10_000 − 1_000 = 9_000
+#[test]
+fn test_cancel_paused_stream_pays_earned_amount() {
+    use soroban_sdk::testutils::Events as _;
+    use soroban_sdk::{symbol_short, IntoVal as _};
+
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // deposit=10_000, rate=10/s — 100 s of active time → 1_000 tokens earned
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+
+    // T = 100: pause the stream.  Employee has earned 1_000 tokens but has NOT
+    // withdrawn them yet.
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    client.pause_stream(&employer, &id);
+
+    // Verify the stream is paused at this point.
+    let s = client.get_stream(&id);
+    assert_eq!(s.status, StreamStatus::Paused);
+
+    // T = 200: cancel while still paused.  Paused time [100, 200] must NOT
+    // accrue additional earnings.
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    client.cancel_stream(&employer, &id);
+
+    // --- Status ---
+    let s = client.get_stream(&id);
+    assert_eq!(s.status, StreamStatus::Cancelled, "stream must be Cancelled");
+
+    // --- Employee received exactly the pre-pause earnings ---
+    // The contract records paid-out amount in `withdrawn`.
+    assert_eq!(
+        s.withdrawn, 1_000,
+        "employee must receive only the 1_000 tokens earned before pause"
+    );
+
+    // --- Event carries the correct claimable and refund amounts ---
+    let events = env.events().all();
+    let cancelled_event = events.iter().find(|(_, topics, _)| {
+        *topics
+            == vec![
+                &env,
+                symbol_short!("cancelled").into_val(&env),
+                id.into_val(&env),
+            ]
+    });
+
+    assert!(
+        cancelled_event.is_some(),
+        "a 'cancelled' event must be emitted"
+    );
+    let (_, _, data) = cancelled_event.unwrap();
+    let (claimable_paid, refund_paid): (i128, i128) = data.into_val(&env);
+
+    assert_eq!(
+        claimable_paid, 1_000,
+        "event claimable_paid must equal earnings before pause (1_000)"
+    );
+    assert_eq!(
+        refund_paid, 9_000,
+        "event refund_paid must equal unearned deposit (9_000)"
+    );
+}
