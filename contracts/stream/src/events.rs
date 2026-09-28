@@ -53,9 +53,10 @@ pub fn rate_updated(env: &Env, stream_id: u64, old_rate: i128, new_rate: i128) {
     );
 }
 
-pub fn contract_initialized(env: &Env, admin: &Address) {
+/// Emitted by `expire_streams` when an eligible stream is transitioned to Exhausted.
+pub fn stream_expired(env: &Env, stream_id: u64) {
     env.events()
-        .publish((symbol_short!("init"),), admin.clone());
+        .publish((symbol_short!("expired"), stream_id), ());
 }
 
 pub fn upgrade_proposed(env: &Env, wasm_hash: &soroban_sdk::BytesN<32>, unlock_time: u64) {
