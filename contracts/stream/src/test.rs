@@ -1787,3 +1787,142 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// SC-19 – create_streams_batch: per-stream failure index in panic messages
+// ---------------------------------------------------------------------------
+
+/// Invalid stream at index 0 must panic with "stream[0]:" prefix.
+#[test]
+#[should_panic(expected = "stream[0]")]
+fn test_batch_invalid_stream_index_0_panics_with_index() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+
+    let params = soroban_sdk::vec![
+        &env,
+        crate::types::StreamParams {
+            employee: employee.clone(),
+            token: token_id.clone(),
+            deposit: 10_000,
+            rate_per_second: 0, // invalid: zero rate → E001
+            stop_time: 0,
+        }
+    ];
+    client.create_streams_batch(&employer, &params);
+}
+
+/// Invalid stream at index 1 (first stream is valid) must panic with "stream[1]:" prefix.
+#[test]
+#[should_panic(expected = "stream[1]")]
+fn test_batch_invalid_stream_index_1_panics_with_index() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee1 = Address::generate(&env);
+    let employee2 = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+
+    let params = soroban_sdk::vec![
+        &env,
+        crate::types::StreamParams {
+            employee: employee1.clone(),
+            token: token_id.clone(),
+            deposit: 10_000,
+            rate_per_second: 1, // valid
+            stop_time: 0,
+        },
+        crate::types::StreamParams {
+            employee: employee2.clone(),
+            token: token_id.clone(),
+            deposit: 10_000,
+            rate_per_second: 0, // invalid: zero rate → stream[1]
+            stop_time: 0,
+        }
+    ];
+    client.create_streams_batch(&employer, &params);
+}
+
+/// Invalid stream at the last index must include that index in the panic message.
+#[test]
+#[should_panic(expected = "stream[2]")]
+fn test_batch_invalid_stream_last_index_panics_with_index() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee1 = Address::generate(&env);
+    let employee2 = Address::generate(&env);
+    let employee3 = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+
+    let params = soroban_sdk::vec![
+        &env,
+        crate::types::StreamParams {
+            employee: employee1.clone(),
+            token: token_id.clone(),
+            deposit: 10_000,
+            rate_per_second: 1, // valid
+            stop_time: 0,
+        },
+        crate::types::StreamParams {
+            employee: employee2.clone(),
+            token: token_id.clone(),
+            deposit: 10_000,
+            rate_per_second: 1, // valid
+            stop_time: 0,
+        },
+        crate::types::StreamParams {
+            employee: employee3.clone(),
+            token: token_id.clone(),
+            deposit: 0, // invalid: zero deposit → stream[2]
+            rate_per_second: 1,
+            stop_time: 0,
+        }
+    ];
+    client.create_streams_batch(&employer, &params);
+}
+
+/// A fully-valid batch must still create all streams successfully.
+#[test]
+fn test_batch_valid_streams_succeeds() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee1 = Address::generate(&env);
+    let employee2 = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    client.set_min_deposit(&admin, &0, &100);
+
+    let params = soroban_sdk::vec![
+        &env,
+        crate::types::StreamParams {
+            employee: employee1.clone(),
+            token: token_id.clone(),
+            deposit: 1_000,
+            rate_per_second: 1,
+            stop_time: 0,
+        },
+        crate::types::StreamParams {
+            employee: employee2.clone(),
+            token: token_id.clone(),
+            deposit: 2_000,
+            rate_per_second: 2,
+            stop_time: 0,
+        }
+    ];
+    let ids = client.create_streams_batch(&employer, &params);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(client.get_stream(&ids.get(0).unwrap()).status, crate::types::StreamStatus::Active);
+    assert_eq!(client.get_stream(&ids.get(1).unwrap()).status, crate::types::StreamStatus::Active);
+}
