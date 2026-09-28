@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 paystream-stream = { path = "..", features = ["testutils"] }
+paystream-token = { path = "../../token", features = ["testutils"] }
 proptest = "1"
 soroban-sdk = { version = "22.0.0", features = ["testutils"] }
 
@@ -20,3 +21,7 @@ path = "src/fuzz_withdraw.rs"
 [[bin]]
 name = "fuzz_create_stream"
 path = "src/fuzz_create_stream.rs"
+
+[[bin]]
+name = "prop_state_machine"
+path = "src/prop_state_machine.rs"
