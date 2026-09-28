@@ -18,6 +18,7 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
 - [Pull Request Process](#pull-request-process)
 - [Testing Requirements](#testing-requirements)
 - [Code Review Expectations](#code-review-expectations)
+- [Release Process](#release-process)
 - [Glossary](#glossary)
 - [License](#license)
 
@@ -403,6 +404,42 @@ Test snapshots in `test_snapshots/` are generated automatically by the SDK. Comm
 ### Security-sensitive changes
 
 Any change to `withdraw`, `cancel_stream`, token transfer logic, or the reentrancy guard requires sign-off from a maintainer with contract security experience before merge. Tag such PRs with the `security` label.
+
+---
+
+## Release Process
+
+Releases follow a formal checklist to ensure all requirements are met before deploying to production. Use the [Release Checklist issue template](.github/ISSUE_TEMPLATE/release.md) to track release progress.
+
+### Creating a Release
+
+1. Open a new issue using the "Release Checklist" template
+2. Replace `{VERSION}` with the actual version number (e.g., v1.2.3)
+3. Complete all items in the pre-release checklist:
+   - SC-01 (Reentrancy Guard) verification
+   - All tests pass (unit, integration, linting, formatting, deny)
+   - Audit status (if applicable)
+   - Testnet deployment verification
+4. Complete all release steps:
+   - Update CHANGELOG.md
+   - Version bump in Cargo.toml (if applicable)
+   - Create and push git tag
+   - Create GitHub release with notes
+   - Deploy to mainnet (if applicable)
+
+### Release Checklist Items
+
+The release template includes checks for:
+- **SC-01 Verification**: Reentrancy guard analysis and documentation
+- **Testing**: Unit tests, integration tests, linting, formatting, deny checks
+- **Audit Status**: External audit completion and findings addressed
+- **Testnet Deployment**: Contract deployed and verified on testnet
+- **Documentation**: CHANGELOG update, version bump, API docs
+- **Git Operations**: Tag creation and push
+- **GitHub Release**: Release creation with notes and deployment hashes
+- **Post-Release**: Mainnet deployment, announcements
+
+See the [Release Checklist template](.github/ISSUE_TEMPLATE/release.md) for the complete checklist.
 
 ---
 
