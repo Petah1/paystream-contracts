@@ -1787,3 +1787,102 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #21 – streams_in_range: time-based stream creation index
+// ---------------------------------------------------------------------------
+
+/// streams_in_range returns stream IDs created within the given range.
+#[test]
+fn test_streams_in_range_single_bucket() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    // Set a known timestamp: day 1 (86_400 seconds into epoch)
+    env.ledger().with_mut(|l| l.timestamp = 86_400);
+
+    client.initialize(&admin);
+    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Query the same day range
+    let ids = client.streams_in_range(&86_400_u64, &172_800_u64);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids.get(0).unwrap(), id1);
+    assert_eq!(ids.get(1).unwrap(), id2);
+}
+
+/// streams_in_range spanning multiple buckets returns IDs from all covered days.
+#[test]
+fn test_streams_in_range_multiple_buckets() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+
+    // Day 0: timestamp 0
+    env.ledger().with_mut(|l| l.timestamp = 0);
+    let id_day0 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Day 1: timestamp 86_400
+    env.ledger().with_mut(|l| l.timestamp = 86_400);
+    let id_day1 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Day 2: timestamp 172_800
+    env.ledger().with_mut(|l| l.timestamp = 172_800);
+    let id_day2 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Query days 0–1 (exclusive of day 2)
+    let ids = client.streams_in_range(&0_u64, &172_800_u64);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids.get(0).unwrap(), id_day0);
+    assert_eq!(ids.get(1).unwrap(), id_day1);
+
+    // Query all three days
+    let ids_all = client.streams_in_range(&0_u64, &259_200_u64);
+    assert_eq!(ids_all.len(), 3);
+    assert_eq!(ids_all.get(2).unwrap(), id_day2);
+}
+
+/// streams_in_range returns empty Vec for a range with no streams.
+#[test]
+fn test_streams_in_range_empty_range() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    // Create a stream on day 0
+    env.ledger().with_mut(|l| l.timestamp = 0);
+    client.initialize(&admin);
+    client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Query a range far in the future — should return empty
+    let ids = client.streams_in_range(&1_000_000_000_u64, &2_000_000_000_u64);
+    assert_eq!(ids.len(), 0);
+}
+
+/// streams_in_range with from_ts >= to_ts returns empty Vec.
+#[test]
+fn test_streams_in_range_inverted_range_empty() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    env.ledger().with_mut(|l| l.timestamp = 0);
+    client.initialize(&admin);
+    client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Inverted range
+    let ids = client.streams_in_range(&86_400_u64, &0_u64);
+    assert_eq!(ids.len(), 0);
+}

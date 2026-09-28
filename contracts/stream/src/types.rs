@@ -76,6 +76,9 @@ pub enum DataKey {
     /// Set by propose_emergency_drain; cleared by emergency_drain after execution.
     /// See SEC-03 / issue #32.
     PendingDrain,
+    /// Time-based index: day-bucket (unix_timestamp / 86400) → Vec<u64> of stream IDs
+    /// created within that day. Enables efficient time-range queries without a full scan.
+    StreamsByTimestamp(u64),
 }
 
 /// Contract error codes – panic messages reference these names so callers can
