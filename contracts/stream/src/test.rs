@@ -1787,3 +1787,84 @@ fn test_resume_stream_resets_last_withdraw_time() {
         "claimable must be 0 immediately after resume (no elapsed time)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// TEST-08 – claimable_at stop_time boundary conditions (issue #57)
+// ---------------------------------------------------------------------------
+//
+// claimable_at(stream_id, timestamp) calls claimable_amount with an explicit
+// timestamp instead of env.ledger().timestamp().  The stop_time boundary is
+// the most important edge case: time is capped at stop_time when stop_time > 0.
+//
+// Three scenarios with deposit=10_000, rate=10/s, stop_time=T+100:
+//   timestamp == stop_time      → elapsed == 100 → claimable = 1_000
+//   timestamp == stop_time - 1  → elapsed ==  99 → claimable =   990
+//   timestamp == stop_time + 1  → elapsed == 100 → claimable = 1_000  (capped)
+
+/// claimable_at at exactly stop_time returns earnings for the full active window.
+#[test]
+fn test_claimable_at_timestamp_equals_stop_time() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // Anchor the ledger at a known non-zero timestamp so stop_time is in the future.
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    let stop_time = env.ledger().timestamp() + 100; // T=1_100
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &stop_time);
+
+    // At timestamp == stop_time: 100 active seconds × 10/s = 1_000
+    let claimable = client.claimable_at(&id, &stop_time);
+    assert_eq!(
+        claimable, 1_000,
+        "claimable_at(stop_time) must equal 100s × 10/s = 1_000"
+    );
+}
+
+/// claimable_at one second before stop_time returns one less rate-unit.
+#[test]
+fn test_claimable_at_timestamp_one_before_stop_time() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    let stop_time = env.ledger().timestamp() + 100; // T=1_100
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &stop_time);
+
+    // At timestamp == stop_time - 1 = T+99: 99 active seconds × 10/s = 990
+    let claimable = client.claimable_at(&id, &(stop_time - 1));
+    assert_eq!(
+        claimable, 990,
+        "claimable_at(stop_time - 1) must equal 99s × 10/s = 990"
+    );
+}
+
+/// claimable_at one second after stop_time returns the same as at stop_time
+/// because elapsed time is capped at stop_time.
+#[test]
+fn test_claimable_at_timestamp_one_after_stop_time() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    let stop_time = env.ledger().timestamp() + 100; // T=1_100
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &stop_time);
+
+    // At timestamp == stop_time + 1: time is capped at stop_time → still 1_000
+    let claimable = client.claimable_at(&id, &(stop_time + 1));
+    assert_eq!(
+        claimable, 1_000,
+        "claimable_at(stop_time + 1) must be capped at stop_time and equal 1_000"
+    );
+}
