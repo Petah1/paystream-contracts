@@ -376,7 +376,7 @@ impl StreamContract {
         stream.withdrawn = stream
             .withdrawn
             .checked_add(amount)
-            .expect("withdrawn overflow");
+            .expect(ERR_OVERFLOW);
         stream.last_withdraw_time = now;
         if stream.withdrawn >= stream.deposit {
             stream.status = StreamStatus::Exhausted;
@@ -446,7 +446,7 @@ impl StreamContract {
             stream.withdrawn = stream
                 .withdrawn
                 .checked_add(amount)
-                .expect("withdrawn overflow");
+                .expect(ERR_OVERFLOW);
             stream.last_withdraw_time = now;
             if stream.withdrawn >= stream.deposit {
                 stream.status = StreamStatus::Exhausted;
@@ -634,7 +634,7 @@ impl StreamContract {
             stream.withdrawn = stream
                 .withdrawn
                 .checked_add(claimable)
-                .expect("withdrawn overflow");
+                .expect(ERR_OVERFLOW);
         }
 
         let refund = stream
@@ -699,7 +699,7 @@ impl StreamContract {
                 stream.withdrawn = stream
                     .withdrawn
                     .checked_add(claimable)
-                    .expect("withdrawn overflow");
+                    .expect(ERR_OVERFLOW);
             }
 
             let refund = stream
