@@ -753,6 +753,73 @@ impl StreamContract {
         events::stream_status_changed(&env, stream_id, &StreamStatus::Exhausted);
     }
 
+    /// Admin batch-expires streams that have passed their stop_time + grace period
+    /// and have no remaining claimable tokens.
+    ///
+    /// This is a keeper / janitor function for high-volume deployments. Expired
+    /// streams occupy persistent storage and show as Active even though they will
+    /// never pay out again. Calling this reclaims storage and keeps off-chain
+    /// indexes accurate.
+    ///
+    /// Eligible criteria (ALL must be true):
+    /// - `stop_time > 0`
+    /// - `now > stop_time + GRACE_PERIOD` (7-day default grace period)
+    /// - `claimable == 0` (employee has nothing left to claim)
+    /// - stream status is `Active` (Paused streams are skipped — they may still
+    ///   have accrued value the employee has not yet claimed)
+    ///
+    /// Ineligible streams in the batch are **silently skipped** — the call never
+    /// reverts due to a single ineligible entry.
+    ///
+    /// Expired streams are transitioned to `Exhausted` (not `Cancelled`). The
+    /// employee earned nothing at the time of expiry so no cancellation split
+    /// is performed. A `stream_expired` event is emitted for each stream that
+    /// is transitioned.
+    ///
+    /// # Parameters
+    /// - `admin` — must match the stored admin (requires auth)
+    /// - `stream_ids` — IDs of streams to evaluate; ineligible ones are skipped
+    ///
+    /// # Errors
+    /// - Panics if `admin` auth fails or does not match the stored admin
+    pub fn expire_streams(env: Env, admin: Address, stream_ids: Vec<u64>) {
+        admin.require_auth();
+        let stored_admin = get_admin(&env);
+        assert_eq!(admin, stored_admin, "{}", ERR_NOT_ADMIN);
+
+        let now = env.ledger().timestamp();
+
+        for stream_id in stream_ids.iter() {
+            // Load stream; skip if not found (defensive — IDs are caller-supplied).
+            let mut stream = match load_stream(&env, stream_id) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            // Eligibility check — skip ineligible streams without reverting.
+            // 1. Must have a hard stop_time.
+            if stream.stop_time == 0 {
+                continue;
+            }
+            // 2. Grace period must have elapsed.
+            if now <= stream.stop_time.saturating_add(GRACE_PERIOD) {
+                continue;
+            }
+            // 3. Must still be Active (Paused streams could have pending accrual).
+            if stream.status != StreamStatus::Active {
+                continue;
+            }
+            // 4. No tokens left for the employee to claim.
+            if claimable_amount(&stream, now) > 0 {
+                continue;
+            }
+
+            stream.status = StreamStatus::Exhausted;
+            save_stream(&env, &stream);
+            events::stream_expired(&env, stream_id);
+        }
+    }
+
     /// Read the full state of a stream by ID.
     ///
     /// # Parameters

@@ -12,6 +12,11 @@ pub const TIMELOCK_DELAY: u64 = 172_800;
 /// Default minimum deposit (10_000 stroops = 0.001 XLM equivalent).
 pub const DEFAULT_MIN_DEPOSIT: i128 = 10_000;
 
+/// Grace period after stop_time before a stream may be expired by admin (in seconds).
+/// Default: 7 days = 604_800 s. Admin-callable expire_streams skips streams that
+/// still have unclaimed tokens or that have not yet crossed stop_time + GRACE_PERIOD.
+pub const GRACE_PERIOD: u64 = 604_800; // 7 days
+
 /// Persistent storage TTL thresholds (in ledgers).
 /// Stellar produces ~1 ledger/5 s → 1 year ≈ 6_307_200 ledgers.
 /// We keep stream data alive for at least 1 year and extend to 2 years on

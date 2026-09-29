@@ -1739,6 +1739,126 @@ fn test_settle_stream_with_claimable_tokens_panics() {
 }
 
 // ---------------------------------------------------------------------------
+// Issue #23 – expire_streams: admin batch-expire past stop_time + grace period
+// ---------------------------------------------------------------------------
+
+/// An eligible stream (stop_time set, grace period elapsed, claimable == 0,
+/// status Active) is transitioned to Exhausted by expire_streams.
+#[test]
+fn test_expire_streams_eligible_stream_exhausted() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // stop_time = now + 100; rate=1/s so all 100 tokens stream by stop_time
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+    let stop_time: u64 = 1_000_100;
+    let id = client.create_stream(&employer, &employee, &token_id, &100, &1, &stop_time);
+
+    // Advance past stop_time + GRACE_PERIOD (7 days = 604_800 s)
+    // Employee withdraws first to clear claimable (so claimable == 0)
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 1);
+    client.withdraw(&employee, &id);
+
+    // Now advance past grace period
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 604_801);
+
+    let mut ids = soroban_sdk::Vec::new(&env);
+    ids.push_back(id);
+    client.expire_streams(&admin, &ids);
+
+    let s = client.get_stream(&id);
+    assert_eq!(s.status, StreamStatus::Exhausted);
+}
+
+/// Ineligible streams in the batch are skipped — the call does not revert.
+#[test]
+fn test_expire_streams_ineligible_skipped() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    // Stream A: no stop_time (ineligible — stop_time == 0)
+    let id_no_stop = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Stream B: stop_time in the future (grace period not elapsed)
+    let id_future = client.create_stream(
+        &employer,
+        &employee,
+        &token_id,
+        &10_000,
+        &1,
+        &(1_000_000 + 604_802),
+    );
+
+    // Stream C: eligible — stop_time set, grace elapsed, claimable == 0
+    let stop_time: u64 = 1_000_100;
+    let id_eligible = client.create_stream(&employer, &employee, &token_id, &100, &1, &stop_time);
+
+    // Withdraw from eligible stream first
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 1);
+    client.withdraw(&employee, &id_eligible);
+
+    // Advance past grace period for eligible stream
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 604_801);
+
+    let mut ids = soroban_sdk::Vec::new(&env);
+    ids.push_back(id_no_stop);
+    ids.push_back(id_future);
+    ids.push_back(id_eligible);
+
+    // Must not revert even though two streams are ineligible
+    client.expire_streams(&admin, &ids);
+
+    // Ineligible streams are unchanged
+    let s_no_stop = client.get_stream(&id_no_stop);
+    assert_eq!(s_no_stop.status, StreamStatus::Active);
+
+    let s_future = client.get_stream(&id_future);
+    assert_eq!(s_future.status, StreamStatus::Active);
+
+    // Eligible stream is expired
+    let s_eligible = client.get_stream(&id_eligible);
+    assert_eq!(s_eligible.status, StreamStatus::Exhausted);
+}
+
+/// expire_streams with still-claimable tokens skips that stream.
+#[test]
+fn test_expire_streams_still_claimable_skipped() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    // Deposit more than rate * (stop - start) so tokens remain after stop_time
+    let stop_time: u64 = 1_000_100;
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &stop_time);
+
+    // Advance past grace period WITHOUT withdrawing — claimable > 0
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 604_801);
+
+    let mut ids = soroban_sdk::Vec::new(&env);
+    ids.push_back(id);
+    client.expire_streams(&admin, &ids);
+
+    // Stream still Active because claimable > 0
+    let s = client.get_stream(&id);
+    assert_eq!(s.status, StreamStatus::Active);
+}
+
+// ---------------------------------------------------------------------------
 // TEST-17 – resume_stream resets last_withdraw_time to current timestamp
 // ---------------------------------------------------------------------------
 
