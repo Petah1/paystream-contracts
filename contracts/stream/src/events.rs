@@ -53,6 +53,12 @@ pub fn rate_updated(env: &Env, stream_id: u64, old_rate: i128, new_rate: i128) {
     );
 }
 
+/// Emitted by `expire_streams` when an eligible stream is transitioned to Exhausted.
+pub fn stream_expired(env: &Env, stream_id: u64) {
+    env.events()
+        .publish((symbol_short!("expired"), stream_id), ());
+}
+
 pub fn upgrade_proposed(env: &Env, wasm_hash: &soroban_sdk::BytesN<32>, unlock_time: u64) {
     env.events()
         .publish((symbol_short!("v1"), symbol_short!("upg_prop"),), (wasm_hash.clone(), unlock_time));
