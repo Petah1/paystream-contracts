@@ -236,3 +236,75 @@ pub fn get_pending_upgrade(env: &Env) -> Option<PendingUpgrade> {
 pub fn clear_pending_upgrade(env: &Env) {
     env.storage().instance().remove(&DataKey::PendingUpgrade);
 }
+
+// ---------------------------------------------------------------------------
+// Time-based stream index (issue #21)
+// ---------------------------------------------------------------------------
+
+/// Number of seconds in one day — used to derive the day-bucket key from a
+/// Unix timestamp.  Streams created within the same UTC day land in the same
+/// bucket, giving O(1) per-create writes and O(buckets) range scans.
+pub const SECONDS_PER_DAY: u64 = 86_400;
+
+/// Return the day-bucket key for `timestamp` (i.e. `timestamp / 86_400`).
+pub fn day_bucket(timestamp: u64) -> u64 {
+    timestamp / SECONDS_PER_DAY
+}
+
+/// Append `stream_id` to the day-bucket that covers `timestamp`.
+///
+/// Called once per `create_stream` / `create_streams_batch`.  O(1) amortised.
+/// TTL is extended on every write so active days never expire before their
+/// streams do.
+pub fn index_stream_by_timestamp(env: &Env, timestamp: u64, stream_id: u64) {
+    let bucket = day_bucket(timestamp);
+    let key = DataKey::StreamsByTimestamp(bucket);
+    let mut ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    ids.push_back(stream_id);
+    env.storage().persistent().set(&key, &ids);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+}
+
+/// Return all stream IDs created in the half-open range [`from_ts`, `to_ts`).
+///
+/// Iterates every day-bucket that overlaps the range and accumulates the IDs.
+/// Buckets with no data are skipped.  IDs within a bucket are in insertion
+/// order (creation order within a day is preserved).
+///
+/// # Parameters
+/// - `from_ts` — inclusive lower bound (Unix timestamp in seconds)
+/// - `to_ts`   — exclusive upper bound (Unix timestamp in seconds)
+///
+/// # Returns
+/// `Vec<u64>` of stream IDs; empty if no streams were created in the range.
+pub fn get_streams_in_range(env: &Env, from_ts: u64, to_ts: u64) -> Vec<u64> {
+    let mut result: Vec<u64> = Vec::new(env);
+    if from_ts >= to_ts {
+        return result;
+    }
+    let start_bucket = day_bucket(from_ts);
+    // to_ts is exclusive; the last bucket to check is the one that contains
+    // the timestamp just before to_ts.
+    let end_bucket = day_bucket(to_ts.saturating_sub(1));
+
+    let mut bucket = start_bucket;
+    loop {
+        let key = DataKey::StreamsByTimestamp(bucket);
+        if let Some(ids) = env.storage().persistent().get::<DataKey, Vec<u64>>(&key) {
+            for id in ids.iter() {
+                result.push_back(id);
+            }
+        }
+        if bucket >= end_bucket {
+            break;
+        }
+        bucket += 1;
+    }
+    result
+}

@@ -19,9 +19,9 @@ pub const CONTRACT_VERSION: u32 = 1;
 use storage::{
     claimable_amount, clear_pending_admin, clear_pending_upgrade, consume_admin_nonce, get_admin,
     get_admin_nonce, get_employee_streams, get_employer_streams, get_min_deposit, get_pending_admin,
-    get_pending_admin_nonce, get_pending_upgrade, index_employee_stream, index_employer_stream,
-    load_stream, next_id, save_stream, set_admin, set_min_deposit, set_pending_admin,
-    set_pending_admin_nonce, set_pending_upgrade, GRACE_PERIOD, TIMELOCK_DELAY,
+    get_pending_admin_nonce, get_pending_upgrade, get_streams_in_range, index_employee_stream,
+    index_employer_stream, index_stream_by_timestamp, load_stream, next_id, save_stream, set_admin,
+    set_min_deposit, set_pending_admin, set_pending_admin_nonce, set_pending_upgrade, TIMELOCK_DELAY,
 };
 use types::{
     DataKey, Stream, StreamParams, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_PENDING_NONCE,
@@ -246,6 +246,7 @@ impl StreamContract {
         save_stream(&env, &stream);
         index_employer_stream(&env, &employer, id);
         index_employee_stream(&env, &employee, id);
+        index_stream_by_timestamp(&env, now, id);
         events::stream_created(&env, id, &employer, &employee, rate_per_second);
         id
     }
@@ -313,6 +314,7 @@ impl StreamContract {
             save_stream(&env, &stream);
             index_employer_stream(&env, &employer, id);
             index_employee_stream(&env, &p.employee, id);
+            index_stream_by_timestamp(&env, now, id);
             events::stream_created(&env, id, &employer, &p.employee, p.rate_per_second);
             ids.push_back(id);
         }
@@ -1092,6 +1094,23 @@ impl StreamContract {
     /// `Vec<u64>` of stream IDs; empty if the address receives no streams.
     pub fn streams_by_employee(env: Env, employee: Address) -> Vec<u64> {
         get_employee_streams(&env, &employee)
+    }
+
+    /// Return all stream IDs created within the half-open timestamp range [`from_ts`, `to_ts`).
+    ///
+    /// Streams are indexed by day-bucket (UTC day) at creation time.  This
+    /// function iterates the relevant buckets, making time-range queries
+    /// efficient for analytics and dashboards without scanning every stream.
+    ///
+    /// # Parameters
+    /// - `from_ts` — inclusive lower bound (Unix timestamp in seconds)
+    /// - `to_ts`   — exclusive upper bound (Unix timestamp in seconds)
+    ///
+    /// # Returns
+    /// `Vec<u64>` of stream IDs in creation order; empty if no streams were
+    /// created in the given range.
+    pub fn streams_in_range(env: Env, from_ts: u64, to_ts: u64) -> Vec<u64> {
+        get_streams_in_range(&env, from_ts, to_ts)
     }
 
     /// Return whether the contract is currently paused.
