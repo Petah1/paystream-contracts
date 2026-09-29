@@ -6,6 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  STELLAR_CLI_VERSION: 27.0.0
 
 jobs:
   integration:
@@ -31,7 +32,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-integration-
 
       - name: Install Stellar CLI
-        run: command -v stellar || cargo install --locked stellar-cli --features opt
+        run: command -v stellar || cargo install --locked stellar-cli@${{ env.STELLAR_CLI_VERSION }} --features opt
 
       - name: Run integration tests
         run: make integration-test

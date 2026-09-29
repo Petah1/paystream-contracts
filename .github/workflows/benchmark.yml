@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  STELLAR_CLI_VERSION: 27.0.0
   # 10 % regression tolerance — fail if measured CPU instructions exceed
   # baseline value by more than this factor.
   TOLERANCE: "1.10"
@@ -37,7 +38,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-bench-
 
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --features opt
+        run: cargo install --locked stellar-cli@${{ env.STELLAR_CLI_VERSION }} --features opt
 
       - name: Build contracts (release WASM)
         run: stellar contract build

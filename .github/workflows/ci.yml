@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  STELLAR_CLI_VERSION: 27.0.0
 
 jobs:
   test:
@@ -82,7 +83,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-wasm-
 
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --features opt
+        run: cargo install --locked stellar-cli@${{ env.STELLAR_CLI_VERSION }} --features opt
 
       - name: Build contracts
         run: stellar contract build

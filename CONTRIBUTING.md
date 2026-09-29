@@ -11,6 +11,7 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
   - [Linux](#linux)
   - [Windows](#windows)
   - [Docker (any OS)](#docker-any-os)
+- [Updating Stellar CLI Version](#updating-stellar-cli-version)
 - [Project Structure](#project-structure)
 - [Coding Standards](#coding-standards)
 - [Commit Conventions](#commit-conventions)
@@ -34,7 +35,7 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
 |---|---|---|
 | Rust | stable (see `rust-toolchain.toml`) | Contract compilation |
 | `wasm32-unknown-unknown` target | bundled via toolchain file | WASM output |
-| Stellar CLI | 22.0.0 | Build, deploy, invoke |
+| Stellar CLI | 27.0.0 | Build, deploy, invoke |
 | Docker + Compose | any recent | Optional — zero-install alternative |
 
 The `rust-toolchain.toml` at the repo root pins the exact Rust channel and installs `rustfmt` and `clippy` automatically when you run any `cargo` command.
@@ -65,7 +66,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 
 # Manual: Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
+cargo install --locked stellar-cli --version 27.0.0
 
 # rust-toolchain.toml handles the target and components automatically
 ```
@@ -102,7 +103,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 
 # Manual: Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
+cargo install --locked stellar-cli --version 27.0.0
 ```
 
 ---
@@ -141,7 +142,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 
 # Manual: Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
+cargo install --locked stellar-cli --version 27.0.0
 ```
 
 ---
@@ -159,6 +160,55 @@ docker compose run --rm build stellar contract build
 ```
 
 The `cargo-cache` volume persists across runs so subsequent builds are fast. WASM output lands in `target/wasm32-unknown-unknown/release/` on your host machine via the bind mount.
+
+---
+
+### Repository Setup
+
+After cloning the repository and setting up your development environment, you may need to configure branch protection rules for the repository. This is typically done by repository maintainers.
+
+```bash
+# Configure branch protection for main and develop branches
+# Requires: gh CLI authenticated with repo admin rights
+./scripts/setup-branch-protection.sh [OWNER/REPO]
+```
+
+The script applies protection rules to both `main` and `develop` branches, including:
+- Required status checks (CI build must pass)
+- Pull request reviews (1 approving review required)
+- No force pushes or deletions
+- Idempotent: can be run multiple times safely
+
+---
+
+## Updating Stellar CLI Version
+
+The Stellar CLI version is pinned in multiple places to ensure reproducible builds:
+
+- **CI workflows**: `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/integration.yml`, and `.github/workflows/benchmark.yml` (env variable `STELLAR_CLI_VERSION`)
+- **Development setup**: `CONTRIBUTING.md` (Prerequisites table and manual setup instructions)
+- **Makefile**: `make setup` target
+
+### How to update
+
+When a new Stellar CLI version is released:
+
+1. Check the [stellar-cli releases](https://github.com/stellar/stellar-cli/releases) for the latest version
+2. Update the version in all locations:
+   - Update `STELLAR_CLI_VERSION` in all CI workflow files:
+     - `.github/workflows/ci.yml`
+     - `.github/workflows/release.yml`
+     - `.github/workflows/integration.yml`
+     - `.github/workflows/benchmark.yml`
+   - Update the version in the Prerequisites table in `CONTRIBUTING.md`
+   - Update the version in all manual setup commands in `CONTRIBUTING.md`
+   - Update the version in the `make setup` target in `Makefile`
+3. Run CI to verify the new version works correctly
+4. Create a PR with the changes (type: `chore`)
+
+### Automation
+
+The project uses Dependabot for dependency updates (see `.github/dependabot.yml`). Dependabot tracks Cargo crate dependencies and GitHub Actions, but does not support tracking Cargo binary installations like `stellar-cli`. Therefore, Stellar CLI version updates must be done manually following the process above.
 
 ---
 
