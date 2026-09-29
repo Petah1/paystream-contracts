@@ -1,12 +1,16 @@
 # PayStream Contracts
 
 [![CI](https://github.com/veracindarella/paystream-contracts/actions/workflows/ci.yml/badge.svg)](https://github.com/veracindarella/paystream-contracts/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/veracindarella/paystream-contracts/branch/main/graph/badge.svg)](https://codecov.io/gh/veracindarella/paystream-contracts)
 [![cargo-deny](https://github.com/veracindarella/paystream-contracts/actions/workflows/deny.yml/badge.svg)](https://github.com/veracindarella/paystream-contracts/actions/workflows/deny.yml)
+[![MSRV](https://img.shields.io/badge/MSRV-1.84.0-orange.svg)](Cargo.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 Soroban smart contracts for **PayStream** — decentralized payroll and salary streaming on the Stellar blockchain.
 
 PayStream lets employers stream salaries to employees in real-time, per-second. Instead of waiting for a monthly paycheck, employees earn and can withdraw their salary continuously as they work — fully on-chain, trustless, and transparent.
+
+> **New here?** Create your first testnet stream in 5 minutes with the **[Quickstart](docs/quickstart.md)**.
 
 ---
 
@@ -202,7 +206,26 @@ claimable = min(
 )
 ```
 
-Time is capped at `stop_time` if set. Paused time is excluded.
+Time is capped at `stop_time` if set. Paused time is excluded. See the [worked examples](docs/api-reference.md#worked-examples).
+
+## Documentation
+
+- [API Reference](docs/api-reference.md)
+- [FAQ](docs/faq.md) — common integrator questions
+- [Operations Runbook](docs/operations-runbook.md) — admin procedures (nonce, pause, min deposit, admin transfer, upgrade)
+
+---
+
+## Deployed Contracts
+
+Current testnet deployments (source of truth: [docs/testnet.md](docs/testnet.md)).
+
+| Contract | Network | Address | Explorer Link |
+|---|---|---|---|
+| PayStream Token | Stellar Testnet | `CDZQHVQHQMHIGJGSQIJVXGPGNZJQDQV4BBKMG7MSIDTJTTBBQYAEUPB` | [StellarExpert](https://stellar.expert/explorer/testnet/contract/CDZQHVQHQMHIGJGSQIJVXGPGNZJQDQV4BBKMG7MSIDTJTTBBQYAEUPB) |
+| PayStream Stream | Stellar Testnet | `CBXKDJUQYQDQKSQT6AKZRQWXDXTQHVXHBQQJQ3WKDXJHPNMRGYAQMRS` | [StellarExpert](https://stellar.expert/explorer/testnet/contract/CBXKDJUQYQDQKSQT6AKZRQWXDXTQHVXHBQQJQ3WKDXJHPNMRGYAQMRS) |
+
+> Contract IDs change after every redeployment. When updating [docs/testnet.md](docs/testnet.md), update this table in the same PR.
 
 ---
 
@@ -269,7 +292,9 @@ We welcome contributions from the community.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md). Report vulnerabilities to `security@paystream.example` — not via public issues.
+See [SECURITY.md](SECURITY.md) for the full security policy and vulnerability reporting.
+To rotate the admin keypair, follow the [key rotation runbook](docs/security/key-rotation.md).
+Report vulnerabilities to `security@paystream.example` — not via public issues.
 
 ## License
 

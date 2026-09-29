@@ -2,6 +2,8 @@
 
 Full documentation for every PayStream contract function: parameters, return values, errors, and CLI examples.
 
+See also: [Error Codes](#error-codes) · [Stream Status Lifecycle](#stream-status-lifecycle) · [Storage Layout](storage-layout.md) (for off-chain indexers)
+
 ---
 
 ## Stream Contract
@@ -546,6 +548,47 @@ stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
   -- claimable --stream_id 1
 ```
 
+#### Worked examples
+
+Each example mirrors a scenario covered in `contracts/stream/src/test.rs`.
+
+**1. Normal accrual** — `deposit = 1_000`, `rate_per_second = 10`, `stop_time = 0`, `last_withdraw_time = 0`, `withdrawn = 0`, `now = 50`
+
+```
+elapsed   = 50 - 0            = 50
+earned    = 50 * 10           = 500
+remaining = 1_000 - 0         = 1_000
+claimable = min(500, 1_000)   = 500
+```
+
+**2. With `stop_time`** — `deposit = 1_000`, `rate_per_second = 10`, `stop_time = 60`, `last_withdraw_time = 0`, `withdrawn = 0`, `now = 100`
+
+```
+effective_end = min(now, stop_time) = 60
+elapsed       = 60 - 0              = 60
+earned        = 60 * 10             = 600
+remaining     = 1_000 - 0           = 1_000
+claimable     = min(600, 1_000)     = 600   # time after stop_time never accrues
+```
+
+**3. After pause/resume** — `deposit = 10_000`, `rate_per_second = 10`; paused at T=100, resumed at T=200 (`resume_stream` sets `last_withdraw_time = 200`), `withdrawn = 0`, `now = 250`
+
+```
+elapsed   = 250 - 200          = 50    # the paused interval 100..200 is excluded
+earned    = 50 * 10            = 500
+remaining = 10_000 - 0         = 10_000
+claimable = min(500, 10_000)   = 500
+```
+
+> Resuming resets `last_withdraw_time`, so tokens accrued before the pause but not yet withdrawn are not carried over. Employees should withdraw before a stream is paused.
+
+**4. Exhausted stream** — `deposit = 1_000`, `rate_per_second = 10`, fully withdrawn at T=100 (`withdrawn = 1_000`, `status = Exhausted`), `now = 500`
+
+```
+status == Exhausted  → claimable = 0
+(formula would also give min(400 * 10, 1_000 - 1_000) = min(4_000, 0) = 0)
+```
+
 ---
 
 ### `claimable_at`
@@ -684,45 +727,26 @@ stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
 
 ---
 
-### `save_template`
+### `admin`
 
-```rust
-fn save_template(env: Env, employer: Address, template_id: u32, params: StreamParams)
+Return the current contract admin address.
+
+Off-chain tools use this to discover the admin without decoding raw ledger state.
+
+**Caller:** Anyone
+
+**Returns:** `Address`
+
+**Errors:**
+- Panics with "admin not set" (E021) if the contract has not been initialised.
+
+**Example:**
+```bash
+stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
+  -- admin
 ```
 
-Stores reusable stream parameters under `(employer, template_id)` in persistent storage (TTL extended on every save/load). Overwrites an existing template with the same ID. `params.employee` is ignored when creating from the template. Requires `employer` auth.
-
-### `create_stream_from_template`
-
-```rust
-fn create_stream_from_template(env: Env, employer: Address, employee: Address, template_id: u32) -> u64
-```
-
-Creates a stream for `employee` using the template's token, deposit, rate and stop time. Same validation and errors as `create_stream`, plus **E028** if the template does not exist.
-
-### `list_templates`
-
-```rust
-fn list_templates(env: Env, employer: Address) -> Vec<(u32, StreamParams)>
-```
-
-Returns every template saved by `employer` in the order first saved.
-
-### `receipt_owner`
-
-```rust
-fn receipt_owner(env: Env, stream_id: u64) -> Address
-```
-
-Returns the current holder of the stream receipt, the only address allowed to `withdraw`. A receipt is minted to the employee on `create_stream` / `create_streams_batch`. See [nft-receipts.md](nft-receipts.md).
-
-### `transfer_receipt`
-
-```rust
-fn transfer_receipt(env: Env, from: Address, to: Address, stream_id: u64)
-```
-
-Transfers the receipt (and the right to future withdrawals) from `from` to `to`. Requires `from` auth. Errors: **E015** stream not found, **E029** `from` is not the holder. Emits `("receipt", stream_id) → (from, to)`.
+---
 
 ### `upgrade`
 
@@ -1139,32 +1163,41 @@ Emitted by `update_rate` when the employer changes the stream's `rate_per_second
 
 ## Error Codes
 
-| Code | Constant | Meaning |
-|---|---|---|
-| E001 | `ERR_ZERO_RATE` | `rate_per_second` must be > 0 |
-| E002 | `ERR_ZERO_DEPOSIT` | `deposit` must be > 0 |
-| E003 | `ERR_REENTRANT` | Reentrant withdraw detected |
-| E004 | `ERR_OVERFLOW` | Arithmetic overflow in claimable calculation |
-| E005 | `ERR_STREAM_CANCELLED` | Cannot top up a cancelled stream |
-| E006 | `ERR_STREAM_EXHAUSTED` | Cannot top up an exhausted stream |
-| E007 | `ERR_BELOW_MIN_DEPOSIT` | Deposit below minimum |
-| E008 | `ERR_INVALID_RATE` | `rate_per_second` exceeds maximum (1,000,000,000) |
-| E009 | `ERR_BAD_NONCE` | Invalid admin nonce |
-| E016 | `ERR_NOT_EMPLOYEE` | Caller does not hold the stream receipt (`withdraw`) |
-| E028 | `ERR_TEMPLATE_NOT_FOUND` | No template saved under this ID for the employer |
-| E029 | `ERR_NOT_RECEIPT_OWNER` | Caller does not own the stream receipt |
-| T001 | `ERR_OVERFLOW` (token) | Token arithmetic overflow |
+Stream contract panics are prefixed with a stable code defined in `contracts/stream/src/types.rs`.
+Keep this table in sync with that file (see [CONTRIBUTING.md](../CONTRIBUTING.md#error-codes)).
+
+| Code | Constant | Meaning | Triggered By | Recommended Fix |
+|---|---|---|---|---|
+| E001 | `ERR_ZERO_RATE` | `rate_per_second` must be > 0 | `create_stream`, `create_streams_batch`, `update_rate` | Pass a `rate_per_second` / `new_rate` ≥ 1 |
+| E002 | `ERR_ZERO_DEPOSIT` | `deposit` / `amount` must be > 0 | `create_stream`, `create_streams_batch`, `set_min_deposit` | Pass a `deposit` / `amount` > 0 |
+| E003 | `ERR_REENTRANT` | Reentrant withdraw detected (stream `locked` flag set) | `withdraw`, `withdraw_all` | Do not re-enter `withdraw` from a token callback; retry in a separate transaction |
+| E004 | `ERR_OVERFLOW` | Arithmetic overflow in claimable / balance calculation | `claimable`, `claimable_at`, `withdraw`, `withdraw_all`, `top_up` | Use smaller `deposit`, `rate_per_second`, or top-up `amount` values |
+| E005 | `ERR_STREAM_CANCELLED` | Cannot top up a cancelled stream | `top_up` | Create a new stream instead |
+| E006 | `ERR_STREAM_EXHAUSTED` | Cannot top up an exhausted stream | `top_up` | Create a new stream instead |
+| E007 | `ERR_BELOW_MIN_DEPOSIT` | Deposit below minimum | `create_stream`, `create_streams_batch` | Deposit at least the minimum (default `10_000`, changed via `set_min_deposit`) |
+| E008 | `ERR_INVALID_RATE` | `rate_per_second` exceeds maximum (1,000,000,000) | `create_stream`, `create_streams_batch`, `update_rate` | Pass a rate ≤ 1,000,000,000 |
+| E009 | `ERR_BAD_NONCE` | Invalid admin nonce | `propose_admin`, `pause_contract`, `unpause_contract`, `set_min_deposit`, `upgrade`, `propose_upgrade`, `execute_upgrade`, `cancel_upgrade` | Read the current value with `admin_nonce` and pass it as `nonce` |
+| T001 | `ERR_OVERFLOW` (token) | Token arithmetic overflow | Token `mint`, `transfer`, `transfer_from` | Use smaller amounts |
 
 ---
 
 ## Stream Status Lifecycle
 
+`Cancelled` and `Exhausted` are terminal states: no function moves a stream out of them.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: create_stream / create_streams_batch
+    Active --> Paused: pause_stream
+    Paused --> Active: resume_stream
+    Active --> Cancelled: cancel_stream / cancel_streams_batch
+    Paused --> Cancelled: cancel_stream / cancel_streams_batch
+    Active --> Exhausted: withdraw / withdraw_all / settle_stream
+    Cancelled --> [*]
+    Exhausted --> [*]
 ```
-Active → Paused → Active
-Active → Cancelled
-Active → Exhausted  (deposit fully streamed, or stop_time passed with no remaining tokens)
-Paused → Cancelled
-```
+
+`update_rate` and `top_up` do not change a stream's status.
 
 `settle_stream` (callable by anyone) triggers the Active → Exhausted transition for streams
 whose `stop_time` has passed and whose deposit is fully streamed. `withdraw` performs the
