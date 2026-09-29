@@ -415,7 +415,7 @@ impl StreamContract {
         stream.withdrawn = stream
             .withdrawn
             .checked_add(amount)
-            .expect("withdrawn overflow");
+            .expect(ERR_OVERFLOW);
         stream.last_withdraw_time = now;
         // Clear any banked pre-rate-change accrual now that it has been paid out.
         stream.pending_accrual = 0;
@@ -487,7 +487,7 @@ impl StreamContract {
             stream.withdrawn = stream
                 .withdrawn
                 .checked_add(amount)
-                .expect("withdrawn overflow");
+                .expect(ERR_OVERFLOW);
             stream.last_withdraw_time = now;
             // Clear any banked pre-rate-change accrual now that it has been paid out.
             stream.pending_accrual = 0;
@@ -686,7 +686,7 @@ impl StreamContract {
             stream.withdrawn = stream
                 .withdrawn
                 .checked_add(claimable)
-                .expect("withdrawn overflow");
+                .expect(ERR_OVERFLOW);
         }
 
         let refund = stream
@@ -751,7 +751,7 @@ impl StreamContract {
                 stream.withdrawn = stream
                     .withdrawn
                     .checked_add(claimable)
-                    .expect("withdrawn overflow");
+                    .expect(ERR_OVERFLOW);
             }
 
             let refund = stream
