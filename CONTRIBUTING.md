@@ -163,6 +163,24 @@ The `cargo-cache` volume persists across runs so subsequent builds are fast. WAS
 
 ---
 
+### Repository Setup
+
+After cloning the repository and setting up your development environment, you may need to configure branch protection rules for the repository. This is typically done by repository maintainers.
+
+```bash
+# Configure branch protection for main and develop branches
+# Requires: gh CLI authenticated with repo admin rights
+./scripts/setup-branch-protection.sh [OWNER/REPO]
+```
+
+The script applies protection rules to both `main` and `develop` branches, including:
+- Required status checks (CI build must pass)
+- Pull request reviews (1 approving review required)
+- No force pushes or deletions
+- Idempotent: can be run multiple times safely
+
+---
+
 ## Updating Stellar CLI Version
 
 The Stellar CLI version is pinned in multiple places to ensure reproducible builds:
