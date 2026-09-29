@@ -589,8 +589,8 @@ fn test_top_up_zero_amount_rejected() {
 // Issue #27 – update_rate: change stream rate without cancel/recreate
 // ---------------------------------------------------------------------------
 
-/// Employer increases the rate; claimable is recalculated at the new rate
-/// going forward (old accrual is settled at the time of the rate change).
+/// Employer increases the rate; claimable includes accrual at the old rate
+/// plus accrual at the new rate after the rate change.
 #[test]
 fn test_update_rate_increase() {
     let (env, client) = setup();
@@ -606,18 +606,19 @@ fn test_update_rate_increase() {
     // 100 s at old rate → 1000 tokens accrued but NOT withdrawn
     env.ledger().with_mut(|l| l.timestamp += 100);
 
-    // Raise rate to 20/s — this also resets last_withdraw_time to now
+    // Raise rate to 20/s — banks 1000 tokens of pre-change accrual into pending_accrual
     client.update_rate(&employer, &id, &20);
 
     let s = client.get_stream(&id);
     assert_eq!(s.rate_per_second, 20);
+    assert_eq!(s.pending_accrual, 1000); // old accrual banked
 
-    // After another 50 s at new rate → 50 * 20 = 1000 more claimable
+    // After another 50 s at new rate → 50 * 20 = 1000 new + 1000 banked = 2000 total
     env.ledger().with_mut(|l| l.timestamp += 50);
-    assert_eq!(client.claimable(&id), 1000); // only accrual since rate change counts
+    assert_eq!(client.claimable(&id), 2000); // old + new accrual both included
 }
 
-/// Employer decreases the rate.
+/// Employer decreases the rate; pre-change accrual is preserved.
 #[test]
 fn test_update_rate_decrease() {
     let (env, client) = setup();
@@ -629,14 +630,17 @@ fn test_update_rate_decrease() {
     client.initialize(&admin);
     let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
 
+    // 100 s at old rate (10/s) → 1000 tokens accrued but NOT withdrawn
     env.ledger().with_mut(|l| l.timestamp += 100);
+    // Decrease rate to 5/s — banks 1000 tokens into pending_accrual
     client.update_rate(&employer, &id, &5);
 
     let s = client.get_stream(&id);
     assert_eq!(s.rate_per_second, 5);
 
+    // 100 s at new rate (5/s) → 500 new + 1000 banked = 1500 total claimable
     env.ledger().with_mut(|l| l.timestamp += 100);
-    assert_eq!(client.claimable(&id), 500); // 100 s * 5/s
+    assert_eq!(client.claimable(&id), 1500); // old + new accrual
 }
 
 /// update_rate works on a Paused stream.
@@ -721,6 +725,42 @@ fn test_update_rate_cancelled_stream_rejected() {
     let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
     client.cancel_stream(&employer, &id);
     client.update_rate(&employer, &id, &5);
+}
+
+/// After update_rate, withdraw pays both banked accrual and new-rate accrual,
+/// then clears pending_accrual.
+#[test]
+fn test_update_rate_withdraw_clears_pending_accrual() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // rate=10/s, deposit=10_000 (large enough not to exhaust)
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+
+    // 100 s at 10/s → 1000 accrued
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    client.update_rate(&employer, &id, &20);
+
+    let s = client.get_stream(&id);
+    assert_eq!(s.pending_accrual, 1000);
+
+    // 50 s at 20/s → 1000 new; total claimable = 1000 + 1000 = 2000
+    env.ledger().with_mut(|l| l.timestamp += 50);
+    assert_eq!(client.claimable(&id), 2000);
+
+    // Withdraw should transfer 2000 and clear pending_accrual
+    let withdrawn = client.withdraw(&employee, &id);
+    assert_eq!(withdrawn, 2000);
+
+    let s = client.get_stream(&id);
+    assert_eq!(s.pending_accrual, 0);
+    assert_eq!(s.withdrawn, 2000);
+    // Future claimable starts fresh from current timestamp at new rate
+    assert_eq!(client.claimable(&id), 0);
 }
 
 // ---------------------------------------------------------------------------

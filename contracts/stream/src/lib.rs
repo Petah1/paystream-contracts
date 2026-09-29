@@ -241,6 +241,7 @@ impl StreamContract {
             stop_time,
             last_withdraw_time: now,
             status: StreamStatus::Active,
+            pending_accrual: 0,
             locked: false,
         };
         save_stream(&env, &stream);
@@ -309,6 +310,7 @@ impl StreamContract {
                 stop_time: p.stop_time,
                 last_withdraw_time: now,
                 status: StreamStatus::Active,
+                pending_accrual: 0,
                 locked: false,
             };
             save_stream(&env, &stream);
@@ -380,6 +382,8 @@ impl StreamContract {
             .checked_add(amount)
             .expect("withdrawn overflow");
         stream.last_withdraw_time = now;
+        // Clear any banked pre-rate-change accrual now that it has been paid out.
+        stream.pending_accrual = 0;
         if stream.withdrawn >= stream.deposit {
             stream.status = StreamStatus::Exhausted;
         }
@@ -450,6 +454,8 @@ impl StreamContract {
                 .checked_add(amount)
                 .expect("withdrawn overflow");
             stream.last_withdraw_time = now;
+            // Clear any banked pre-rate-change accrual now that it has been paid out.
+            stream.pending_accrual = 0;
             if stream.withdrawn >= stream.deposit {
                 stream.status = StreamStatus::Exhausted;
             }
@@ -562,9 +568,10 @@ impl StreamContract {
     /// Employer updates the `rate_per_second` on an Active or Paused stream.
     ///
     /// Before changing the rate, any tokens accrued since the last withdrawal
-    /// are settled by resetting `last_withdraw_time` to the current ledger
-    /// timestamp.  This ensures the employee is credited at the old rate for
-    /// all elapsed time and will accrue at the new rate going forward.
+    /// are settled by computing the elapsed claimable amount and adding it to
+    /// `pending_accrual`. This ensures the employee retains full access to
+    /// earnings at the old rate and will accrue at the new rate going forward.
+    /// `last_withdraw_time` is then reset to the current timestamp.
     ///
     /// # Parameters
     /// - `employer` — must match the stream's employer (requires auth)
@@ -581,18 +588,26 @@ impl StreamContract {
         employer.require_auth();
         validate_rate(new_rate);
 
-        let mut stream = load_stream(&env, stream_id).expect("stream not found");
-        assert_eq!(stream.employer, employer, "not the employer");
+        let mut stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
+        assert_eq!(stream.employer, employer, "{}", ERR_NOT_EMPLOYER);
         assert!(
             stream.status == StreamStatus::Active || stream.status == StreamStatus::Paused,
             "stream not active or paused"
         );
 
-        // Settle accrued-but-not-withdrawn tokens by snapshotting last_withdraw_time
-        // to now.  The next claimable calculation will start from this point at
-        // the new rate.  (For a Paused stream elapsed is already 0 so this is a
-        // no-op in terms of accrual, but we still reset for consistency.)
-        stream.last_withdraw_time = env.ledger().timestamp();
+        let now = env.ledger().timestamp();
+
+        // Bank any accrual earned at the old rate into pending_accrual so the
+        // employee can still claim it after the rate changes.
+        let pre_change_accrual = claimable_amount(&stream, now);
+        stream.pending_accrual = stream
+            .pending_accrual
+            .checked_add(pre_change_accrual)
+            .expect(ERR_OVERFLOW);
+
+        // Reset last_withdraw_time so future claimable is measured from now
+        // at the new rate only.
+        stream.last_withdraw_time = now;
 
         let old_rate = stream.rate_per_second;
         stream.rate_per_second = new_rate;
