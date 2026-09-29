@@ -2,6 +2,8 @@
 
 Full documentation for every PayStream contract function: parameters, return values, errors, and CLI examples.
 
+See also: [Error Codes](#error-codes) · [Stream Status Lifecycle](#stream-status-lifecycle) · [Storage Layout](storage-layout.md) (for off-chain indexers)
+
 ---
 
 ## Stream Contract
@@ -1145,29 +1147,41 @@ Emitted by `update_rate` when the employer changes the stream's `rate_per_second
 
 ## Error Codes
 
-| Code | Constant | Meaning |
-|---|---|---|
-| E001 | `ERR_ZERO_RATE` | `rate_per_second` must be > 0 |
-| E002 | `ERR_ZERO_DEPOSIT` | `deposit` must be > 0 |
-| E003 | `ERR_REENTRANT` | Reentrant withdraw detected |
-| E004 | `ERR_OVERFLOW` | Arithmetic overflow in claimable calculation |
-| E005 | `ERR_STREAM_CANCELLED` | Cannot top up a cancelled stream |
-| E006 | `ERR_STREAM_EXHAUSTED` | Cannot top up an exhausted stream |
-| E007 | `ERR_BELOW_MIN_DEPOSIT` | Deposit below minimum |
-| E008 | `ERR_INVALID_RATE` | `rate_per_second` exceeds maximum (1,000,000,000) |
-| E009 | `ERR_BAD_NONCE` | Invalid admin nonce |
-| T001 | `ERR_OVERFLOW` (token) | Token arithmetic overflow |
+Stream contract panics are prefixed with a stable code defined in `contracts/stream/src/types.rs`.
+Keep this table in sync with that file (see [CONTRIBUTING.md](../CONTRIBUTING.md#error-codes)).
+
+| Code | Constant | Meaning | Triggered By | Recommended Fix |
+|---|---|---|---|---|
+| E001 | `ERR_ZERO_RATE` | `rate_per_second` must be > 0 | `create_stream`, `create_streams_batch`, `update_rate` | Pass a `rate_per_second` / `new_rate` ≥ 1 |
+| E002 | `ERR_ZERO_DEPOSIT` | `deposit` / `amount` must be > 0 | `create_stream`, `create_streams_batch`, `set_min_deposit` | Pass a `deposit` / `amount` > 0 |
+| E003 | `ERR_REENTRANT` | Reentrant withdraw detected (stream `locked` flag set) | `withdraw`, `withdraw_all` | Do not re-enter `withdraw` from a token callback; retry in a separate transaction |
+| E004 | `ERR_OVERFLOW` | Arithmetic overflow in claimable / balance calculation | `claimable`, `claimable_at`, `withdraw`, `withdraw_all`, `top_up` | Use smaller `deposit`, `rate_per_second`, or top-up `amount` values |
+| E005 | `ERR_STREAM_CANCELLED` | Cannot top up a cancelled stream | `top_up` | Create a new stream instead |
+| E006 | `ERR_STREAM_EXHAUSTED` | Cannot top up an exhausted stream | `top_up` | Create a new stream instead |
+| E007 | `ERR_BELOW_MIN_DEPOSIT` | Deposit below minimum | `create_stream`, `create_streams_batch` | Deposit at least the minimum (default `10_000`, changed via `set_min_deposit`) |
+| E008 | `ERR_INVALID_RATE` | `rate_per_second` exceeds maximum (1,000,000,000) | `create_stream`, `create_streams_batch`, `update_rate` | Pass a rate ≤ 1,000,000,000 |
+| E009 | `ERR_BAD_NONCE` | Invalid admin nonce | `propose_admin`, `pause_contract`, `unpause_contract`, `set_min_deposit`, `upgrade`, `propose_upgrade`, `execute_upgrade`, `cancel_upgrade` | Read the current value with `admin_nonce` and pass it as `nonce` |
+| T001 | `ERR_OVERFLOW` (token) | Token arithmetic overflow | Token `mint`, `transfer`, `transfer_from` | Use smaller amounts |
 
 ---
 
 ## Stream Status Lifecycle
 
+`Cancelled` and `Exhausted` are terminal states: no function moves a stream out of them.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: create_stream / create_streams_batch
+    Active --> Paused: pause_stream
+    Paused --> Active: resume_stream
+    Active --> Cancelled: cancel_stream / cancel_streams_batch
+    Paused --> Cancelled: cancel_stream / cancel_streams_batch
+    Active --> Exhausted: withdraw / withdraw_all / settle_stream
+    Cancelled --> [*]
+    Exhausted --> [*]
 ```
-Active → Paused → Active
-Active → Cancelled
-Active → Exhausted  (deposit fully streamed, or stop_time passed with no remaining tokens)
-Paused → Cancelled
-```
+
+`update_rate` and `top_up` do not change a stream's status.
 
 `settle_stream` (callable by anyone) triggers the Active → Exhausted transition for streams
 whose `stop_time` has passed and whose deposit is fully streamed. `withdraw` performs the
