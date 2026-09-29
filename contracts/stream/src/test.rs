@@ -198,8 +198,9 @@ fn test_cancel_stream_enriched_event() {
     let events = env.events().all();
     let cancelled_event = events.iter().find(|(_, topics, _): &(_, SdkVec<Val>, Val)| {
         use soroban_sdk::TryIntoVal;
-        if let Some(first) = topics.get(0) {
-            let sym: Result<soroban_sdk::Symbol, _> = first.try_into_val(&env);
+        // Check second topic element (index 1) since index 0 is now "v1"
+        if let Some(second) = topics.get(1) {
+            let sym: Result<soroban_sdk::Symbol, _> = second.try_into_val(&env);
             sym.map(|s| s == symbol_short!("cancelled")).unwrap_or(false)
         } else {
             false
@@ -1135,6 +1136,7 @@ fn test_cancel_stream_event_contains_amounts() {
         *topics
             == vec![
                 &env,
+                symbol_short!("v1").into_val(&env),
                 symbol_short!("cancelled").into_val(&env),
                 id.into_val(&env),
             ]
@@ -1171,6 +1173,7 @@ fn test_cancel_stream_paused_zero_claimable_full_refund_event() {
         *topics
             == vec![
                 &env,
+                symbol_short!("v1").into_val(&env),
                 symbol_short!("cancelled").into_val(&env),
                 id.into_val(&env),
             ]
