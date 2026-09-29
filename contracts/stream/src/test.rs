@@ -800,6 +800,42 @@ fn test_upgrade_preserves_stream_state() {
     assert_eq!(client.claimable(&id), 1000);
 }
 
+/// Admin nonce must survive WASM replacement and remain correct afterwards.
+#[cfg(feature = "wasm-tests")]
+#[test]
+fn test_upgrade_preserves_admin_nonce() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.set_min_deposit(&admin, &0, &100);
+    assert_eq!(client.admin_nonce(), 1);
+
+    let new_wasm_hash = env.deployer().upload_contract_wasm(stream_wasm::WASM);
+    client.upgrade(&new_wasm_hash, &1);
+
+    // upgrade itself consumes nonce 1, so the next expected nonce is 2.
+    assert_eq!(client.admin_nonce(), 2);
+    client.set_min_deposit(&admin, &2, &200);
+    assert_eq!(client.admin_nonce(), 3);
+}
+
+/// A previously used nonce must still be rejected after an upgrade.
+#[cfg(feature = "wasm-tests")]
+#[test]
+#[should_panic(expected = "E009")]
+fn test_upgrade_nonce_replay_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.set_min_deposit(&admin, &0, &100);
+    let new_wasm_hash = env.deployer().upload_contract_wasm(stream_wasm::WASM);
+    client.upgrade(&new_wasm_hash, &1);
+
+    client.set_min_deposit(&admin, &0, &200);
+}
+
 #[test]
 fn test_migrate_noop() {
     let (env, client) = setup();
