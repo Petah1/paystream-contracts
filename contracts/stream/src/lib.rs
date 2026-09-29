@@ -25,10 +25,10 @@ use storage::{
 };
 use types::{
     DataKey, Stream, StreamParams, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_PENDING_NONCE,
-    ERR_CONTRACT_PAUSED, ERR_EMPTY_PARAMS, ERR_NOT_ADMIN, ERR_NOT_EMPLOYEE, ERR_NOT_EMPLOYER,
-    ERR_NOT_PENDING_ADMIN, ERR_NO_PENDING_ADMIN, ERR_OVERFLOW, ERR_REENTRANT,
-    ERR_STREAM_ALREADY_ENDED, ERR_STREAM_CANCELLED, ERR_STREAM_EXHAUSTED, ERR_STREAM_NOT_ACTIVE,
-    ERR_STREAM_NOT_FOUND, ERR_STREAM_NOT_PAUSED, ERR_ZERO_DEPOSIT,
+    ERR_CONTRACT_PAUSED, ERR_EMPTY_PARAMS, ERR_NEW_EMPLOYER_IS_EMPLOYEE, ERR_NOT_ADMIN,
+    ERR_NOT_EMPLOYEE, ERR_NOT_EMPLOYER, ERR_NOT_PENDING_ADMIN, ERR_NO_PENDING_ADMIN, ERR_OVERFLOW,
+    ERR_REENTRANT, ERR_STREAM_ALREADY_ENDED, ERR_STREAM_CANCELLED, ERR_STREAM_EXHAUSTED,
+    ERR_STREAM_NOT_ACTIVE, ERR_STREAM_NOT_FOUND, ERR_STREAM_NOT_PAUSED, ERR_ZERO_DEPOSIT,
 };
 use validate::{validate_create_stream, validate_rate, validate_top_up};
 
@@ -732,6 +732,46 @@ impl StreamContract {
             save_stream(&env, &stream);
             events::stream_status_changed(&env, stream_id, &StreamStatus::Cancelled);
         }
+    }
+
+    /// Employer transfers ownership of a stream to a new employer address.
+    ///
+    /// Enables employer account rotation or business acquisition without
+    /// cancelling and recreating existing streams. The stream's terms
+    /// (rate, deposit, employee) are unchanged; only the `employer` field
+    /// and the `EmployerStreams` index are updated.
+    ///
+    /// # Parameters
+    /// - `employer` — current employer; must own the stream (requires auth)
+    /// - `stream_id` — ID of the stream to transfer
+    /// - `new_employer` — address that will become the new employer
+    ///
+    /// # Errors
+    /// - Panics if stream not found
+    /// - Panics if `employer` auth fails
+    /// - E018 if `employer` does not match the stream's employer
+    /// - E020 if stream is Cancelled or Exhausted
+    /// - E028 if `new_employer` equals the stream's employee
+    pub fn transfer_stream(env: Env, employer: Address, stream_id: u64, new_employer: Address) {
+        employer.require_auth();
+        let mut stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
+        assert_eq!(stream.employer, employer, "{}", ERR_NOT_EMPLOYER);
+        assert!(
+            stream.status == StreamStatus::Active || stream.status == StreamStatus::Paused,
+            "{}",
+            ERR_STREAM_ALREADY_ENDED
+        );
+        assert_ne!(new_employer, stream.employee, "{}", ERR_NEW_EMPLOYER_IS_EMPLOYEE);
+
+        // Update EmployerStreams index: remove stream_id from old employer, add to new.
+        remove_employer_stream(&env, &employer, stream_id);
+        index_employer_stream(&env, &new_employer, stream_id);
+
+        // Update the stream record.
+        stream.employer = new_employer.clone();
+        save_stream(&env, &stream);
+
+        events::stream_transferred(&env, stream_id, &employer, &new_employer);
     }
 
     /// Settle a stream that has passed its `stop_time` but whose status is still Active.
