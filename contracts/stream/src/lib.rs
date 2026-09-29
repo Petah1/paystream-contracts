@@ -268,7 +268,10 @@ impl StreamContract {
     /// # Errors
     /// - Panics if contract is paused
     /// - Panics if `params` is empty
-    /// - Same per-stream validations as [`create_stream`]
+    /// - Same per-stream validations as [`create_stream`]; panic message includes
+    ///   the zero-based stream index, e.g. `"stream[3]: E001: rate_per_second must
+    ///   be greater than zero"`, so callers can identify the failing entry without
+    ///   retrying each stream individually.
     pub fn create_streams_batch(
         env: Env,
         employer: Address,
@@ -281,16 +284,47 @@ impl StreamContract {
         let now = env.ledger().timestamp();
         let min_deposit = get_min_deposit(&env);
         let mut ids: Vec<u64> = Vec::new(&env);
+        let mut index: u32 = 0;
 
         for p in params.iter() {
-            validate_create_stream(
-                p.deposit,
-                min_deposit,
-                p.rate_per_second,
-                p.stop_time,
-                now,
-                &employer,
-                &p.employee,
+            // Validate each parameter independently and prefix any panic with the
+            // stream index so callers can identify which entry failed.
+            assert!(
+                p.deposit > 0,
+                "stream[{}]: {}",
+                index,
+                ERR_ZERO_DEPOSIT
+            );
+            assert!(
+                p.deposit >= min_deposit,
+                "stream[{}]: {}",
+                index,
+                ERR_BELOW_MIN_DEPOSIT
+            );
+            assert!(
+                p.rate_per_second > 0,
+                "stream[{}]: {}",
+                index,
+                ERR_ZERO_RATE
+            );
+            assert!(
+                p.rate_per_second <= validate::MAX_RATE_PER_SECOND,
+                "stream[{}]: {}",
+                index,
+                ERR_INVALID_RATE
+            );
+            if p.stop_time > 0 {
+                assert!(
+                    p.stop_time > now,
+                    "stream[{}]: {}",
+                    index,
+                    ERR_STOP_TIME_PAST
+                );
+            }
+            assert!(
+                employer != p.employee,
+                "stream[{}]: employer and employee must differ",
+                index
             );
 
             let token_client = token::Client::new(&env, &p.token);
@@ -319,6 +353,7 @@ impl StreamContract {
             index_stream_by_timestamp(&env, now, id);
             events::stream_created(&env, id, &employer, &p.employee, p.rate_per_second);
             ids.push_back(id);
+            index += 1;
         }
 
         ids
