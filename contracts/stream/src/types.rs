@@ -27,6 +27,11 @@ pub struct Stream {
     pub stop_time: u64,        // 0 = no end, else hard stop timestamp
     pub last_withdraw_time: u64,
     pub status: StreamStatus,
+    /// Tokens accrued at the previous rate and not yet withdrawn.
+    /// Populated by `update_rate` before changing `rate_per_second` so that
+    /// the employee can still claim earnings from before the rate change.
+    /// Cleared (decremented) when `withdraw` pays it out.
+    pub pending_accrual: i128,
     /// Reentrancy guard: true while a withdraw cross-contract call is in flight.
     /// Soroban executes contracts atomically within a single transaction, so
     /// cross-contract callbacks cannot interleave with the current frame.
@@ -76,6 +81,9 @@ pub enum DataKey {
     /// Set by propose_emergency_drain; cleared by emergency_drain after execution.
     /// See SEC-03 / issue #32.
     PendingDrain,
+    /// Time-based index: day-bucket (unix_timestamp / 86400) → Vec<u64> of stream IDs
+    /// created within that day. Enables efficient time-range queries without a full scan.
+    StreamsByTimestamp(u64),
 }
 
 /// Contract error codes – panic messages reference these names so callers can
@@ -130,7 +138,11 @@ pub const ERR_ADMIN_NOT_SET: &str = "E021: admin has not been initialised";
 pub const ERR_STOP_TIME_PAST: &str = "E022: stop_time must be in the future";
 pub const ERR_AMOUNT_NOT_POSITIVE: &str = "E023: amount must be positive";
 pub const ERR_BAD_PENDING_NONCE: &str = "E024: invalid pending admin nonce";
+/// E025: no pending upgrade proposal exists.
+pub const ERR_NO_PENDING_UPGRADE: &str = "E025: no pending upgrade proposal";
 /// E026: emergency_drain requires the contract to be hard-paused first (SEC-03 / #32).
 pub const ERR_DRAIN_NOT_PAUSED: &str = "E026: contract must be paused before emergency drain";
 /// E027: no pending emergency drain proposal exists (SEC-03 / #32).
 pub const ERR_NO_PENDING_DRAIN: &str = "E027: no pending emergency drain proposal";
+/// E028: new_employer must differ from the stream's employee.
+pub const ERR_NEW_EMPLOYER_IS_EMPLOYEE: &str = "E028: new_employer must differ from the stream employee";

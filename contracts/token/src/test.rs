@@ -25,7 +25,7 @@ fn test_initialize() {
 
 #[test]
 #[should_panic(expected = "already initialized")]
-fn test_initialize_cannot_be_called_twice() {
+fn test_token_initialize_cannot_be_called_twice() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
     client.initialize(&admin, &1_000_000);
