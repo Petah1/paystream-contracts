@@ -20,3 +20,7 @@ path = "src/fuzz_withdraw.rs"
 [[bin]]
 name = "fuzz_create_stream"
 path = "src/fuzz_create_stream.rs"
+
+[[bin]]
+name = "fuzz_admin_nonce"
+path = "src/fuzz_admin_nonce.rs"
