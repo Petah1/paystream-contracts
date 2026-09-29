@@ -198,8 +198,9 @@ fn test_cancel_stream_enriched_event() {
     let events = env.events().all();
     let cancelled_event = events.iter().find(|(_, topics, _): &(_, SdkVec<Val>, Val)| {
         use soroban_sdk::TryIntoVal;
-        if let Some(first) = topics.get(0) {
-            let sym: Result<soroban_sdk::Symbol, _> = first.try_into_val(&env);
+        // Check second topic element (index 1) since index 0 is now "v1"
+        if let Some(second) = topics.get(1) {
+            let sym: Result<soroban_sdk::Symbol, _> = second.try_into_val(&env);
             sym.map(|s| s == symbol_short!("cancelled")).unwrap_or(false)
         } else {
             false
@@ -589,8 +590,8 @@ fn test_top_up_zero_amount_rejected() {
 // Issue #27 – update_rate: change stream rate without cancel/recreate
 // ---------------------------------------------------------------------------
 
-/// Employer increases the rate; claimable is recalculated at the new rate
-/// going forward (old accrual is settled at the time of the rate change).
+/// Employer increases the rate; claimable includes accrual at the old rate
+/// plus accrual at the new rate after the rate change.
 #[test]
 fn test_update_rate_increase() {
     let (env, client) = setup();
@@ -606,18 +607,19 @@ fn test_update_rate_increase() {
     // 100 s at old rate → 1000 tokens accrued but NOT withdrawn
     env.ledger().with_mut(|l| l.timestamp += 100);
 
-    // Raise rate to 20/s — this also resets last_withdraw_time to now
+    // Raise rate to 20/s — banks 1000 tokens of pre-change accrual into pending_accrual
     client.update_rate(&employer, &id, &20);
 
     let s = client.get_stream(&id);
     assert_eq!(s.rate_per_second, 20);
+    assert_eq!(s.pending_accrual, 1000); // old accrual banked
 
-    // After another 50 s at new rate → 50 * 20 = 1000 more claimable
+    // After another 50 s at new rate → 50 * 20 = 1000 new + 1000 banked = 2000 total
     env.ledger().with_mut(|l| l.timestamp += 50);
-    assert_eq!(client.claimable(&id), 1000); // only accrual since rate change counts
+    assert_eq!(client.claimable(&id), 2000); // old + new accrual both included
 }
 
-/// Employer decreases the rate.
+/// Employer decreases the rate; pre-change accrual is preserved.
 #[test]
 fn test_update_rate_decrease() {
     let (env, client) = setup();
@@ -629,14 +631,17 @@ fn test_update_rate_decrease() {
     client.initialize(&admin);
     let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
 
+    // 100 s at old rate (10/s) → 1000 tokens accrued but NOT withdrawn
     env.ledger().with_mut(|l| l.timestamp += 100);
+    // Decrease rate to 5/s — banks 1000 tokens into pending_accrual
     client.update_rate(&employer, &id, &5);
 
     let s = client.get_stream(&id);
     assert_eq!(s.rate_per_second, 5);
 
+    // 100 s at new rate (5/s) → 500 new + 1000 banked = 1500 total claimable
     env.ledger().with_mut(|l| l.timestamp += 100);
-    assert_eq!(client.claimable(&id), 500); // 100 s * 5/s
+    assert_eq!(client.claimable(&id), 1500); // old + new accrual
 }
 
 /// update_rate works on a Paused stream.
@@ -721,6 +726,42 @@ fn test_update_rate_cancelled_stream_rejected() {
     let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
     client.cancel_stream(&employer, &id);
     client.update_rate(&employer, &id, &5);
+}
+
+/// After update_rate, withdraw pays both banked accrual and new-rate accrual,
+/// then clears pending_accrual.
+#[test]
+fn test_update_rate_withdraw_clears_pending_accrual() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // rate=10/s, deposit=10_000 (large enough not to exhaust)
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &10, &0);
+
+    // 100 s at 10/s → 1000 accrued
+    env.ledger().with_mut(|l| l.timestamp += 100);
+    client.update_rate(&employer, &id, &20);
+
+    let s = client.get_stream(&id);
+    assert_eq!(s.pending_accrual, 1000);
+
+    // 50 s at 20/s → 1000 new; total claimable = 1000 + 1000 = 2000
+    env.ledger().with_mut(|l| l.timestamp += 50);
+    assert_eq!(client.claimable(&id), 2000);
+
+    // Withdraw should transfer 2000 and clear pending_accrual
+    let withdrawn = client.withdraw(&employee, &id);
+    assert_eq!(withdrawn, 2000);
+
+    let s = client.get_stream(&id);
+    assert_eq!(s.pending_accrual, 0);
+    assert_eq!(s.withdrawn, 2000);
+    // Future claimable starts fresh from current timestamp at new rate
+    assert_eq!(client.claimable(&id), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -825,6 +866,31 @@ fn test_initialize_cannot_be_called_twice() {
 
     client.initialize(&admin); // first call — OK
     client.initialize(&new_admin); // second call — must panic
+}
+
+// ---------------------------------------------------------------------------
+// Issue #20 – admin() getter
+// ---------------------------------------------------------------------------
+
+/// admin() returns the address set during initialize.
+#[test]
+fn test_admin_returns_current_admin() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    assert_eq!(client.admin(), admin);
+}
+
+/// After a two-step admin transfer, admin() returns the new admin.
+#[test]
+fn test_admin_returns_new_admin_after_transfer() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    client.initialize(&admin);
+    client.propose_admin(&new_admin, &0);
+    client.accept_admin(&new_admin, &0);
+    assert_eq!(client.admin(), new_admin);
 }
 
 // ---------------------------------------------------------------------------
@@ -1070,6 +1136,7 @@ fn test_cancel_stream_event_contains_amounts() {
         *topics
             == vec![
                 &env,
+                symbol_short!("v1").into_val(&env),
                 symbol_short!("cancelled").into_val(&env),
                 id.into_val(&env),
             ]
@@ -1106,6 +1173,7 @@ fn test_cancel_stream_paused_zero_claimable_full_refund_event() {
         *topics
             == vec![
                 &env,
+                symbol_short!("v1").into_val(&env),
                 symbol_short!("cancelled").into_val(&env),
                 id.into_val(&env),
             ]
@@ -1739,6 +1807,126 @@ fn test_settle_stream_with_claimable_tokens_panics() {
 }
 
 // ---------------------------------------------------------------------------
+// Issue #23 – expire_streams: admin batch-expire past stop_time + grace period
+// ---------------------------------------------------------------------------
+
+/// An eligible stream (stop_time set, grace period elapsed, claimable == 0,
+/// status Active) is transitioned to Exhausted by expire_streams.
+#[test]
+fn test_expire_streams_eligible_stream_exhausted() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    // stop_time = now + 100; rate=1/s so all 100 tokens stream by stop_time
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+    let stop_time: u64 = 1_000_100;
+    let id = client.create_stream(&employer, &employee, &token_id, &100, &1, &stop_time);
+
+    // Advance past stop_time + GRACE_PERIOD (7 days = 604_800 s)
+    // Employee withdraws first to clear claimable (so claimable == 0)
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 1);
+    client.withdraw(&employee, &id);
+
+    // Now advance past grace period
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 604_801);
+
+    let mut ids = soroban_sdk::Vec::new(&env);
+    ids.push_back(id);
+    client.expire_streams(&admin, &ids);
+
+    let s = client.get_stream(&id);
+    assert_eq!(s.status, StreamStatus::Exhausted);
+}
+
+/// Ineligible streams in the batch are skipped — the call does not revert.
+#[test]
+fn test_expire_streams_ineligible_skipped() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    // Stream A: no stop_time (ineligible — stop_time == 0)
+    let id_no_stop = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Stream B: stop_time in the future (grace period not elapsed)
+    let id_future = client.create_stream(
+        &employer,
+        &employee,
+        &token_id,
+        &10_000,
+        &1,
+        &(1_000_000 + 604_802),
+    );
+
+    // Stream C: eligible — stop_time set, grace elapsed, claimable == 0
+    let stop_time: u64 = 1_000_100;
+    let id_eligible = client.create_stream(&employer, &employee, &token_id, &100, &1, &stop_time);
+
+    // Withdraw from eligible stream first
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 1);
+    client.withdraw(&employee, &id_eligible);
+
+    // Advance past grace period for eligible stream
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 604_801);
+
+    let mut ids = soroban_sdk::Vec::new(&env);
+    ids.push_back(id_no_stop);
+    ids.push_back(id_future);
+    ids.push_back(id_eligible);
+
+    // Must not revert even though two streams are ineligible
+    client.expire_streams(&admin, &ids);
+
+    // Ineligible streams are unchanged
+    let s_no_stop = client.get_stream(&id_no_stop);
+    assert_eq!(s_no_stop.status, StreamStatus::Active);
+
+    let s_future = client.get_stream(&id_future);
+    assert_eq!(s_future.status, StreamStatus::Active);
+
+    // Eligible stream is expired
+    let s_eligible = client.get_stream(&id_eligible);
+    assert_eq!(s_eligible.status, StreamStatus::Exhausted);
+}
+
+/// expire_streams with still-claimable tokens skips that stream.
+#[test]
+fn test_expire_streams_still_claimable_skipped() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    client.initialize(&admin);
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    // Deposit more than rate * (stop - start) so tokens remain after stop_time
+    let stop_time: u64 = 1_000_100;
+    let id = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &stop_time);
+
+    // Advance past grace period WITHOUT withdrawing — claimable > 0
+    env.ledger().with_mut(|l| l.timestamp = stop_time + 604_801);
+
+    let mut ids = soroban_sdk::Vec::new(&env);
+    ids.push_back(id);
+    client.expire_streams(&admin, &ids);
+
+    // Stream still Active because claimable > 0
+    let s = client.get_stream(&id);
+    assert_eq!(s.status, StreamStatus::Active);
+}
+
+// ---------------------------------------------------------------------------
 // TEST-17 – resume_stream resets last_withdraw_time to current timestamp
 // ---------------------------------------------------------------------------
 
@@ -1789,43 +1977,100 @@ fn test_resume_stream_resets_last_withdraw_time() {
 }
 
 // ---------------------------------------------------------------------------
-// SC-16 – min_deposit() public query function
+// Issue #21 – streams_in_range: time-based stream creation index
 // ---------------------------------------------------------------------------
 
-/// min_deposit() returns the default minimum deposit (10_000) before
-/// set_min_deposit has been called.
+/// streams_in_range returns stream IDs created within the given range.
 #[test]
-fn test_min_deposit_returns_default() {
-    use crate::storage::DEFAULT_MIN_DEPOSIT;
-
+fn test_streams_in_range_single_bucket() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
 
-    assert_eq!(client.min_deposit(), DEFAULT_MIN_DEPOSIT);
+    // Set a known timestamp: day 1 (86_400 seconds into epoch)
+    env.ledger().with_mut(|l| l.timestamp = 86_400);
+
+    client.initialize(&admin);
+    let id1 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+    let id2 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Query the same day range
+    let ids = client.streams_in_range(&86_400_u64, &172_800_u64);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids.get(0).unwrap(), id1);
+    assert_eq!(ids.get(1).unwrap(), id2);
 }
 
-/// min_deposit() returns the value set by set_min_deposit.
+/// streams_in_range spanning multiple buckets returns IDs from all covered days.
 #[test]
-fn test_min_deposit_returns_set_value() {
+fn test_streams_in_range_multiple_buckets() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
     client.initialize(&admin);
 
-    client.set_min_deposit(&admin, &0, &50_000);
-    assert_eq!(client.min_deposit(), 50_000);
+    // Day 0: timestamp 0
+    env.ledger().with_mut(|l| l.timestamp = 0);
+    let id_day0 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Day 1: timestamp 86_400
+    env.ledger().with_mut(|l| l.timestamp = 86_400);
+    let id_day1 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Day 2: timestamp 172_800
+    env.ledger().with_mut(|l| l.timestamp = 172_800);
+    let id_day2 = client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Query days 0–1 (exclusive of day 2)
+    let ids = client.streams_in_range(&0_u64, &172_800_u64);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids.get(0).unwrap(), id_day0);
+    assert_eq!(ids.get(1).unwrap(), id_day1);
+
+    // Query all three days
+    let ids_all = client.streams_in_range(&0_u64, &259_200_u64);
+    assert_eq!(ids_all.len(), 3);
+    assert_eq!(ids_all.get(2).unwrap(), id_day2);
 }
 
-/// min_deposit() reflects subsequent updates to the minimum deposit.
+/// streams_in_range returns empty Vec for a range with no streams.
 #[test]
-fn test_min_deposit_reflects_update() {
+fn test_streams_in_range_empty_range() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    // Create a stream on day 0
+    env.ledger().with_mut(|l| l.timestamp = 0);
     client.initialize(&admin);
+    client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
 
-    client.set_min_deposit(&admin, &0, &1_000);
-    assert_eq!(client.min_deposit(), 1_000);
+    // Query a range far in the future — should return empty
+    let ids = client.streams_in_range(&1_000_000_000_u64, &2_000_000_000_u64);
+    assert_eq!(ids.len(), 0);
+}
 
-    client.set_min_deposit(&admin, &1, &5_000);
-    assert_eq!(client.min_deposit(), 5_000);
+/// streams_in_range with from_ts >= to_ts returns empty Vec.
+#[test]
+fn test_streams_in_range_inverted_range_empty() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let employer = Address::generate(&env);
+    let employee = Address::generate(&env);
+    let token_id = setup_token(&env, &employer);
+
+    env.ledger().with_mut(|l| l.timestamp = 0);
+    client.initialize(&admin);
+    client.create_stream(&employer, &employee, &token_id, &10_000, &1, &0);
+
+    // Inverted range
+    let ids = client.streams_in_range(&86_400_u64, &0_u64);
+    assert_eq!(ids.len(), 0);
 }

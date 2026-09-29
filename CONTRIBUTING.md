@@ -18,6 +18,7 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
 - [Pull Request Process](#pull-request-process)
 - [Testing Requirements](#testing-requirements)
 - [Code Review Expectations](#code-review-expectations)
+- [Release Process](#release-process)
 - [Glossary](#glossary)
 - [License](#license)
 
@@ -36,55 +37,70 @@ Thank you for contributing to PayStream — a Soroban smart contract system for 
 
 The `rust-toolchain.toml` at the repo root pins the exact Rust channel and installs `rustfmt` and `clippy` automatically when you run any `cargo` command.
 
+> **Quick setup**: Run `make setup` to automatically install Rust, add the wasm32 target, and install Stellar CLI at the pinned version. This works on macOS and Linux (including WSL on Windows).
+
 ---
 
 ### macOS
 
 ```bash
-# 1. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 2. Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
-
-# 3. Clone and bootstrap
+# 1. Clone the repository
 git clone https://github.com/veracindarella/paystream-contracts.git
 cd paystream-contracts
-# rust-toolchain.toml handles the target and components automatically
 
-# 4. Verify
+# 2. Run automated setup (installs Rust, wasm32 target, and Stellar CLI)
+make setup
+
+# 3. Verify
 make test
 ```
 
-> Homebrew users can also install Rust via `brew install rust`, but `rustup` is preferred because it respects `rust-toolchain.toml`.
+> **Manual setup**: If you prefer to install dependencies manually, follow the steps below. Homebrew users can also install Rust via `brew install rust`, but `rustup` is preferred because it respects `rust-toolchain.toml`.
+
+```bash
+# Manual: Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Manual: Install Stellar CLI
+cargo install --locked stellar-cli --version 22.0.0
+
+# rust-toolchain.toml handles the target and components automatically
+```
 
 ---
 
 ### Linux
 
 ```bash
-# 1. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 2. Install build dependencies (Debian/Ubuntu)
+# 1. Install build dependencies (Debian/Ubuntu)
 sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
 
-# 3. Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
-
-# 4. Clone and bootstrap
+# 2. Clone the repository
 git clone https://github.com/veracindarella/paystream-contracts.git
 cd paystream-contracts
 
-# 5. Verify
+# 3. Run automated setup (installs Rust, wasm32 target, and Stellar CLI)
+make setup
+
+# 4. Verify
 make test
 ```
 
-For Fedora/RHEL replace step 2 with:
+For Fedora/RHEL replace step 1 with:
 ```bash
 sudo dnf install gcc openssl-devel
+```
+
+> **Manual setup**: If you prefer to install dependencies manually:
+
+```bash
+# Manual: Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Manual: Install Stellar CLI
+cargo install --locked stellar-cli --version 22.0.0
 ```
 
 ---
@@ -99,25 +115,32 @@ wsl --install
 # Restart when prompted, then open a WSL terminal
 
 # Inside WSL:
-# 2. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 3. Install build dependencies
+# 2. Install build dependencies
 sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
 
-# 4. Install Stellar CLI
-cargo install --locked stellar-cli --version 22.0.0
-
-# 5. Clone and bootstrap
+# 3. Clone the repository
 git clone https://github.com/veracindarella/paystream-contracts.git
 cd paystream-contracts
 
-# 6. Verify
+# 4. Run automated setup (installs Rust, wasm32 target, and Stellar CLI)
+make setup
+
+# 5. Verify
 make test
 ```
 
 > If you prefer not to use WSL, the [Docker path](#docker-any-os) below works natively on Windows with Docker Desktop.
+
+> **Manual setup**: If you prefer to install dependencies manually inside WSL:
+
+```bash
+# Manual: Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Manual: Install Stellar CLI
+cargo install --locked stellar-cli --version 22.0.0
+```
 
 ---
 
@@ -264,6 +287,20 @@ make lint        # clippy -D warnings
 make test        # cargo test
 ```
 
+### Pre-commit hooks (recommended)
+
+To avoid CI failures due to formatting or linting issues, install the pre-commit hook that automatically runs `cargo fmt --check` and `cargo clippy` before each commit:
+
+```bash
+make setup-hooks
+```
+
+The hook will prevent commits that fail formatting or linting checks. If you need to bypass the hook temporarily (e.g., for a work-in-progress commit), use:
+
+```bash
+git commit --no-verify
+```
+
 ### Branch naming
 
 Branch from `main` using the pattern `<type>/<short-description>`:
@@ -367,6 +404,42 @@ Test snapshots in `test_snapshots/` are generated automatically by the SDK. Comm
 ### Security-sensitive changes
 
 Any change to `withdraw`, `cancel_stream`, token transfer logic, or the reentrancy guard requires sign-off from a maintainer with contract security experience before merge. Tag such PRs with the `security` label.
+
+---
+
+## Release Process
+
+Releases follow a formal checklist to ensure all requirements are met before deploying to production. Use the [Release Checklist issue template](.github/ISSUE_TEMPLATE/release.md) to track release progress.
+
+### Creating a Release
+
+1. Open a new issue using the "Release Checklist" template
+2. Replace `{VERSION}` with the actual version number (e.g., v1.2.3)
+3. Complete all items in the pre-release checklist:
+   - SC-01 (Reentrancy Guard) verification
+   - All tests pass (unit, integration, linting, formatting, deny)
+   - Audit status (if applicable)
+   - Testnet deployment verification
+4. Complete all release steps:
+   - Update CHANGELOG.md
+   - Version bump in Cargo.toml (if applicable)
+   - Create and push git tag
+   - Create GitHub release with notes
+   - Deploy to mainnet (if applicable)
+
+### Release Checklist Items
+
+The release template includes checks for:
+- **SC-01 Verification**: Reentrancy guard analysis and documentation
+- **Testing**: Unit tests, integration tests, linting, formatting, deny checks
+- **Audit Status**: External audit completion and findings addressed
+- **Testnet Deployment**: Contract deployed and verified on testnet
+- **Documentation**: CHANGELOG update, version bump, API docs
+- **Git Operations**: Tag creation and push
+- **GitHub Release**: Release creation with notes and deployment hashes
+- **Post-Release**: Mainnet deployment, announcements
+
+See the [Release Checklist template](.github/ISSUE_TEMPLATE/release.md) for the complete checklist.
 
 ---
 

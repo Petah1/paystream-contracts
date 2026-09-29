@@ -684,6 +684,27 @@ stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
 
 ---
 
+### `admin`
+
+Return the current contract admin address.
+
+Off-chain tools use this to discover the admin without decoding raw ledger state.
+
+**Caller:** Anyone
+
+**Returns:** `Address`
+
+**Errors:**
+- Panics with "admin not set" (E021) if the contract has not been initialised.
+
+**Example:**
+```bash
+stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
+  -- admin
+```
+
+---
+
 ### `upgrade`
 
 Admin upgrades the contract WASM in-place.
