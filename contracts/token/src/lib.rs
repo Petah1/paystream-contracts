@@ -10,10 +10,10 @@ mod test;
 
 use crate::storage::{
     admin_nonce, allowance, balance_of, clear_pending_admin, consume_admin_nonce, get_admin,
-    get_pending_admin, set_admin, set_allowance, set_balance, set_pending_admin, set_total_supply,
-    total_supply,
+    get_pending_admin, has_admin, set_admin, set_allowance, set_balance, set_pending_admin,
+    set_total_supply, total_supply,
 };
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
 
 /// T001: token arithmetic overflow.
 const ERR_OVERFLOW: &str = "T001: token arithmetic overflow";
@@ -180,6 +180,33 @@ impl TokenContract {
     /// Return the current admin nonce expected by [`mint`].
     pub fn admin_nonce(env: Env) -> u64 {
         admin_nonce(&env)
+    }
+
+    /// Admin upgrades the token contract WASM in-place (TOK-10).
+    ///
+    /// Balances, allowances and total supply live in contract storage and are
+    /// preserved across the upgrade. Call [`migrate`] afterwards.
+    ///
+    /// # Parameters
+    /// - `new_wasm_hash` — 32-byte hash of the uploaded WASM blob
+    /// - `nonce` — current admin nonce (replay protection)
+    ///
+    /// # Errors
+    /// - Panics if admin auth fails
+    /// - Panics if `nonce` does not match the stored admin nonce
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>, nonce: u64) {
+        get_admin(&env).require_auth();
+        consume_admin_nonce(&env, nonce);
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// Post-upgrade migration hook. Currently a no-op beyond admin verification.
+    ///
+    /// # Errors
+    /// - Panics if `admin` auth fails or does not match the stored admin
+    pub fn migrate(env: Env, admin: Address) {
+        admin.require_auth();
+        assert_eq!(get_admin(&env), admin, "not admin");
     }
 
     /// Step 1 of two-step admin transfer: current admin nominates `new_admin`.

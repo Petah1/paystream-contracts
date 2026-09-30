@@ -20,6 +20,12 @@ pub fn withdrawn(env: &Env, id: u64, employee: &Address, amount: i128) {
         .publish((symbol_short!("v1"), symbol_short!("withdraw"), id), (employee.clone(), amount));
 }
 
+/// Emitted when a stream receipt changes hands (PROD-01).
+pub fn receipt_transferred(env: &Env, id: u64, from: &Address, to: &Address) {
+    env.events()
+        .publish((symbol_short!("receipt"), id), (from.clone(), to.clone()));
+}
+
 pub fn stream_status_changed(env: &Env, id: u64, status: &StreamStatus) {
     env.events()
         .publish((symbol_short!("v1"), symbol_short!("status"), id), status.clone());

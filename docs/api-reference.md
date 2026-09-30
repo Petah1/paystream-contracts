@@ -1056,6 +1056,22 @@ stellar contract invoke --id <TOKEN_ID> --source <NEW_ADMIN_KEY> --network testn
 
 ---
 
+### `upgrade` (token)
+
+```rust
+fn upgrade(env: Env, new_wasm_hash: BytesN<32>, nonce: u64)
+```
+
+Admin replaces the token WASM in-place; balances and total supply are preserved. Requires admin auth; panics with `invalid nonce` if `nonce` ≠ `admin_nonce()`.
+
+### `migrate` (token)
+
+```rust
+fn migrate(env: Env, admin: Address)
+```
+
+Post-upgrade no-op hook. Requires `admin` auth and that it matches the stored admin.
+
 ### `burn`
 
 Burn tokens from the caller's own balance, reducing total supply.
