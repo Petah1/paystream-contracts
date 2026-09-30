@@ -22,6 +22,7 @@ PayStream lets employers stream salaries to employees in real-time, per-second. 
 - **Stellar-native** — built on Stellar's fast, low-fee infrastructure with Soroban smart contracts
 - **Flexible** — pause, resume, top-up, or cancel streams; optional hard stop time
 - **Multi-token** — each stream can use any [SEP-41](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0041.md) compliant token; employer and employee can run concurrent streams in different assets
+- **Native XLM** — stream Stellar's native asset via its Stellar Asset Contract (SAC) address; no custom token deployment needed (see [docs/testnet.md](docs/testnet.md#native-xlm-streams-sac))
 
 ---
 
@@ -164,16 +165,17 @@ The `cargo-cache` volume persists the Cargo registry between runs so subsequent 
 | Function | Caller | Description |
 |---|---|---|
 | `initialize(admin)` | Admin | Set contract admin |
-| `create_stream(employer, employee, token, deposit, rate_per_second, stop_time)` | Employer | Create stream, lock deposit |
+| `create_stream(employer, employee, token, deposit, rate_per_second, stop_time, low_balance_threshold)` | Employer | Create stream, lock deposit; optional `low_bal` event threshold |
 | `create_streams_batch(employer, params)` | Employer | Create multiple streams atomically; all succeed or all revert |
 | `withdraw(employee, stream_id)` | Employee | Withdraw all claimable earnings |
 | `withdraw_all(employee)` | Employee | Withdraw from all streams in one transaction |
-| `top_up(employer, stream_id, amount)` | Employer | Add more funds to active stream |
+| `top_up(employer, stream_id, amount, low_balance_threshold)` | Employer | Add more funds to active stream; optionally update `low_bal` threshold |
 | `pause_stream(employer, stream_id)` | Employer | Pause accrual |
 | `resume_stream(employer, stream_id)` | Employer | Resume accrual |
 | `cancel_stream(employer, stream_id)` | Employer | Pay employee earned share, refund remainder |
 | `cancel_streams_batch(employer, stream_ids)` | Employer | Cancel multiple streams atomically; all succeed or all revert |
 | `get_stream(stream_id)` | Anyone | Read stream state |
+| `get_streams_batch(stream_ids)` | Anyone | Read up to 50 streams in one call, in input order |
 | `stream_status(stream_id)` | Anyone | Query stream status only (lightweight) |
 | `claimable(stream_id)` | Anyone | Query withdrawable amount right now |
 | `stream_count()` | Anyone | Total streams created |

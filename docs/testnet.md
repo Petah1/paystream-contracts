@@ -162,6 +162,46 @@ export STELLAR_ADMIN_ADDRESS=<YOUR_PUBLIC_KEY>
 
 ---
 
+## Native XLM Streams (SAC)
+
+PayStream accepts any SEP-41 token address. Stellar's native asset (XLM) is exposed as a SEP-41 token through its built-in **Stellar Asset Contract (SAC)**, so XLM streams need no custom token deployment — pass the XLM SAC address as `token_address`.
+
+| Network | XLM SAC address |
+|---|---|
+| Testnet | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
+
+Verify (or derive for another network) with:
+
+```bash
+stellar contract id asset --asset native --network testnet
+```
+
+Create an XLM stream (amounts are in **stroops**; 1 XLM = 10,000,000 stroops):
+
+```bash
+stellar contract invoke --id <STREAM_ID> --source <EMPLOYER_KEY> --network testnet \
+  -- create_stream \
+    --employer <EMPLOYER_ADDRESS> \
+    --employee <EMPLOYEE_ADDRESS> \
+    --token_address CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC \
+    --deposit 100000000 \
+    --rate_per_second 100 \
+    --stop_time 0
+```
+
+An end-to-end testnet check is provided in `scripts/xlm-sac-test.sh` (create an XLM stream → wait → withdraw → verify balance → cancel).
+
+### Edge cases
+
+- **Fees are separate from the stream.** Transaction fees are always paid in XLM by the transaction source account and are never deducted from the stream deposit. An employer streaming XLM must hold `deposit + fees` in spendable XLM; an employee needs a small XLM balance to pay for `withdraw` calls.
+- **SAC transfers are fee-free.** The native SAC does not charge a transfer fee, so the amount the employee receives equals the amount withdrawn.
+- **Minimum balance (base reserve).** Classic accounts must keep a minimum XLM balance (currently 1 XLM base reserve plus 0.5 XLM per subentry). The SAC cannot transfer XLM that would drop the employer below this reserve, so `create_stream` / `top_up` fail if `deposit` exceeds the employer's *spendable* balance, not their total balance.
+- **Recipient accounts must exist.** The native SAC cannot credit an unfunded classic account. The employee's account must be created (funded) before the first `withdraw`, and the employer's account must exist to receive refunds on `cancel_stream`.
+- **No trustline needed.** Unlike issued assets, native XLM does not require a trustline on either account.
+- **Contract-held XLM** sits in the PayStream contract's SAC balance, which is not subject to the account reserve.
+
+---
+
 ## Useful Links
 
 - Stellar Testnet Horizon: <https://horizon-testnet.stellar.org>
