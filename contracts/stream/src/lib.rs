@@ -10,7 +10,7 @@ pub mod validate;
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Map, Vec};
 
 /// Compile-time contract version.  Increment this constant with every
 /// WASM upgrade so that `migrate` stamps the new version into instance
@@ -251,6 +251,7 @@ impl StreamContract {
         deposit: i128,
         rate_per_second: i128,
         stop_time: u64,
+        low_balance_threshold: Option<i128>,
     ) -> u64 {
         employer.require_auth();
         assert!(!get_paused(&env), "{}", ERR_CONTRACT_PAUSED);
@@ -286,6 +287,7 @@ impl StreamContract {
             status: StreamStatus::Active,
             pending_accrual: 0,
             locked: false,
+            low_balance_threshold: low_balance_threshold.unwrap_or(0),
         };
         save_stream(&env, &stream);
         index_employer_stream(&env, &employer, id);
@@ -329,6 +331,9 @@ impl StreamContract {
         let mut ids: Vec<u64> = Vec::new(&env);
         let mut index: u32 = 0;
 
+        // PROD-02: validate every stream and sum deposits per token so each
+        // token is pulled from the employer with a single transfer.
+        let mut totals: Map<Address, i128> = Map::new(&env);
         for p in params.iter() {
             // Validate each parameter independently and prefix any panic with the
             // stream index so callers can identify which entry failed.
@@ -369,11 +374,22 @@ impl StreamContract {
                 "stream[{}]: employer and employee must differ",
                 index
             );
+            let total = totals
+                .get(p.token.clone())
+                .unwrap_or(0)
+                .checked_add(p.deposit)
+                .expect(ERR_OVERFLOW);
+            totals.set(p.token.clone(), total);
+        }
 
-            let token_client = token::Client::new(&env, &p.token);
+        for (token_address, total) in totals.iter() {
+            let token_client = token::Client::new(&env, &token_address);
             token_client.balance(&employer); // SEP-41 probe
-            token_client.transfer(&employer, &env.current_contract_address(), &p.deposit);
+            token_client.transfer(&employer, &env.current_contract_address(), &total);
+        }
 
+        let mut ids: Vec<u64> = Vec::new(&env);
+        for p in params.iter() {
             let id = next_id(&env);
             let stream = Stream {
                 id,
@@ -389,6 +405,7 @@ impl StreamContract {
                 status: StreamStatus::Active,
                 pending_accrual: 0,
                 locked: false,
+                low_balance_threshold: 0,
             };
             save_stream(&env, &stream);
             index_employer_stream(&env, &employer, id);
@@ -411,7 +428,7 @@ impl StreamContract {
     /// no tokens remain claimable (SC-02).
     ///
     /// # Parameters
-    /// - `employee` — must match the stream's employee (requires auth)
+    /// - `employee` — must hold the stream receipt (requires auth)
     /// - `stream_id` — ID of the stream to withdraw from
     ///
     /// # Returns
@@ -420,14 +437,20 @@ impl StreamContract {
     /// # Errors
     /// - Panics if contract is paused
     /// - Panics if stream not found
-    /// - Panics if caller is not the stream's employee
+    /// - E016 if caller does not hold the stream receipt
     /// - Panics if stream is not Active or Exhausted
     /// - E003 if a reentrant withdraw is detected
     pub fn withdraw(env: Env, employee: Address, stream_id: u64) -> i128 {
         employee.require_auth();
         assert!(!get_paused(&env), "{}", ERR_CONTRACT_PAUSED);
         let mut stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
-        assert_eq!(stream.employee, employee, "{}", ERR_NOT_EMPLOYEE);
+        // PROD-01: the current receipt holder, not the original employee, may withdraw.
+        assert_eq!(
+            receipt_owner(&env, &stream),
+            employee,
+            "{}",
+            ERR_NOT_EMPLOYEE
+        );
         assert!(
             stream.status == StreamStatus::Active || stream.status == StreamStatus::Exhausted,
             "{}",
@@ -473,6 +496,16 @@ impl StreamContract {
         stream.locked = false;
         save_stream(&env, &stream);
         events::withdrawn(&env, stream_id, &employee, amount);
+        let remaining = stream.deposit - stream.withdrawn;
+        if stream.low_balance_threshold > 0 && remaining < stream.low_balance_threshold {
+            events::low_balance(
+                &env,
+                stream_id,
+                &stream.employer,
+                remaining,
+                stream.low_balance_threshold,
+            );
+        }
         amount
     }
 
@@ -508,6 +541,11 @@ impl StreamContract {
                 Some(s) => s,
                 None => continue,
             };
+
+            // PROD-01: skip streams whose receipt has been transferred away.
+            if receipt_owner(&env, &stream) != employee {
+                continue;
+            }
 
             // Skip streams that cannot be withdrawn from
             if stream.status == StreamStatus::Cancelled || stream.status == StreamStatus::Paused {
@@ -570,7 +608,13 @@ impl StreamContract {
     /// - E006 if stream is Exhausted
     /// - Panics if `amount` ≤ 0
     /// - Panics if the token transfer fails
-    pub fn top_up(env: Env, employer: Address, stream_id: u64, amount: i128) {
+    pub fn top_up(
+        env: Env,
+        employer: Address,
+        stream_id: u64,
+        amount: i128,
+        low_balance_threshold: Option<i128>,
+    ) {
         employer.require_auth();
         validate_top_up(amount);
         let mut stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
@@ -593,6 +637,9 @@ impl StreamContract {
             .deposit
             .checked_add(amount)
             .expect(ERR_OVERFLOW);
+        if let Some(threshold) = low_balance_threshold {
+            stream.low_balance_threshold = threshold;
+        }
         save_stream(&env, &stream);
         events::topped_up(&env, stream_id, &employer, amount);
     }
@@ -801,7 +848,7 @@ impl StreamContract {
         if claimable > 0 {
             token_client.transfer(
                 &env.current_contract_address(),
-                &stream.employee,
+                &receipt_owner(&env, &stream),
                 &claimable,
             );
             stream.withdrawn = stream
@@ -866,7 +913,7 @@ impl StreamContract {
             if claimable > 0 {
                 token_client.transfer(
                     &env.current_contract_address(),
-                    &stream.employee,
+                    &receipt_owner(&env, &stream),
                     &claimable,
                 );
                 stream.withdrawn = stream
@@ -1045,6 +1092,26 @@ impl StreamContract {
         load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND)
     }
 
+    /// Read the full state of up to 50 streams in a single call.
+    ///
+    /// # Parameters
+    /// - `stream_ids` — IDs of the streams to read (max 50)
+    ///
+    /// # Returns
+    /// `Vec<Stream>` in the same order as `stream_ids`.
+    ///
+    /// # Errors
+    /// - Panics if `stream_ids` has more than 50 entries
+    /// - Panics if any stream is not found
+    pub fn get_streams_batch(env: Env, stream_ids: Vec<u64>) -> Vec<Stream> {
+        assert!(stream_ids.len() <= 50, "stream_ids length exceeds 50");
+        let mut streams: Vec<Stream> = Vec::new(&env);
+        for stream_id in stream_ids.iter() {
+            streams.push_back(load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND));
+        }
+        streams
+    }
+
     /// Query only the status of a stream by ID.
     ///
     /// Lighter than [`get_stream`] because it loads the full [`Stream`] struct
@@ -1099,6 +1166,93 @@ impl StreamContract {
     pub fn claimable_at(env: Env, stream_id: u64, timestamp: u64) -> i128 {
         let stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
         claimable_amount(&stream, timestamp)
+    }
+
+    /// Return the current holder of the stream's receipt (PROD-01).
+    ///
+    /// The holder is the only address allowed to [`withdraw`] from the stream.
+    ///
+    /// # Errors
+    /// - E015 if the stream does not exist
+    pub fn receipt_owner(env: Env, stream_id: u64) -> Address {
+        let stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
+        receipt_owner(&env, &stream)
+    }
+
+    /// Transfer a stream's receipt, and with it the right to withdraw future
+    /// earnings, from `from` to `to` (PROD-01).
+    ///
+    /// # Parameters
+    /// - `from` — current receipt holder (requires auth)
+    /// - `to` — new receipt holder
+    /// - `stream_id` — stream whose receipt is transferred
+    ///
+    /// # Errors
+    /// - E015 if the stream does not exist
+    /// - E029 if `from` does not hold the receipt
+    pub fn transfer_receipt(env: Env, from: Address, to: Address, stream_id: u64) {
+        from.require_auth();
+        let stream = load_stream(&env, stream_id).expect(ERR_STREAM_NOT_FOUND);
+        assert_eq!(
+            receipt_owner(&env, &stream),
+            from,
+            "{}",
+            ERR_NOT_RECEIPT_OWNER
+        );
+        set_receipt_owner(&env, stream_id, &to);
+        index_employee_stream(&env, &to, stream_id);
+        events::receipt_transferred(&env, stream_id, &from, &to);
+    }
+
+    /// Save reusable stream parameters under `template_id` (PROD-03).
+    ///
+    /// Overwrites any existing template with the same ID. The `employee` field
+    /// of `params` is ignored when creating from the template.
+    ///
+    /// # Parameters
+    /// - `employer` — template owner (requires auth)
+    /// - `template_id` — employer-chosen identifier
+    /// - `params` — stream parameters to store
+    pub fn save_template(env: Env, employer: Address, template_id: u32, params: StreamParams) {
+        employer.require_auth();
+        save_template(&env, &employer, template_id, &params);
+    }
+
+    /// Create a stream for `employee` using a saved template (PROD-03).
+    ///
+    /// Equivalent to [`create_stream`] with the template's token, deposit,
+    /// rate and stop time.
+    ///
+    /// # Errors
+    /// - E028 if no template exists for `(employer, template_id)`
+    /// - Same validations as [`create_stream`]
+    pub fn create_stream_from_template(
+        env: Env,
+        employer: Address,
+        employee: Address,
+        template_id: u32,
+    ) -> u64 {
+        let t = load_template(&env, &employer, template_id).expect(ERR_TEMPLATE_NOT_FOUND);
+        Self::create_stream(
+            env,
+            employer,
+            employee,
+            t.token,
+            t.deposit,
+            t.rate_per_second,
+            t.stop_time,
+        )
+    }
+
+    /// Return all templates saved by `employer` as `(template_id, params)` pairs (PROD-03).
+    pub fn list_templates(env: Env, employer: Address) -> Vec<(u32, StreamParams)> {
+        let mut out = Vec::new(&env);
+        for id in get_template_ids(&env, &employer).iter() {
+            if let Some(p) = load_template(&env, &employer, id) {
+                out.push_back((id, p));
+            }
+        }
+        out
     }
 
     /// Admin upgrades the contract WASM in-place.

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::types::{
-    DataKey, PendingUpgrade, Stream, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_NONCE, ERR_OVERFLOW,
+    DataKey, PendingUpgrade, Stream, StreamParams, StreamStatus, ERR_ADMIN_NOT_SET, ERR_BAD_NONCE,
+    ERR_OVERFLOW,
 };
 use soroban_sdk::{Address, BytesN, Env, Vec};
 

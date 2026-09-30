@@ -50,6 +50,7 @@ fn make_stream(
         last_withdraw_time,
         status: StreamStatus::Active,
         locked: false,
+        low_balance_threshold: 0,
     }
 }
 
@@ -152,6 +153,7 @@ proptest! {
                 last_withdraw_time: 0,
                 status: StreamStatus::Exhausted,
                 locked: false,
+                low_balance_threshold: 0,
             }
         };
         prop_assert_eq!(claimable_amount(&stream, now), 0,

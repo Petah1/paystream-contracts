@@ -31,6 +31,7 @@ fn make_stream(
         last_withdraw_time,
         status,
         locked: false,
+        low_balance_threshold: 0,
     }
 }
 

@@ -98,3 +98,19 @@ Measurements averaged over 10 runs on identical ledger state (stream with 10,000
 - Streams with 0 claimable or Cancelled/Paused status are skipped at near-zero cost (no token transfer)
 - For 10 streams, `withdraw_all` is approximately 10× the cost of a single `withdraw`
 - Recommended usage: for employees with ≤ 20 streams, `withdraw_all` is cost-effective vs. N individual calls; for larger portfolios consider batching in groups
+
+---
+
+## `create_streams_batch` — per-token transfer consolidation (PROD-02)
+
+`create_streams_batch` now validates every stream, sums deposits per token, and performs **one** `token::transfer` per distinct token instead of one per stream.
+
+**Measured in the Soroban test host (`env.cost_estimate().budget()`), 5 streams × 10,000 deposit:**
+
+| Scenario | Token transfers | CPU instructions | Memory bytes |
+|---|---|---|---|
+| 5 streams, same token | 1 | ~832,000 | ~153,000 |
+| 5 streams, 5 different tokens | 5 | ~1,341,000 | ~313,000 |
+
+The 5-token case has the same transfer count as the pre-change same-token batch, so the ~38% CPU reduction is an upper bound on savings (it also touches 5 token contract instances). Callers see identical results: same stream IDs, deposits and events.
+

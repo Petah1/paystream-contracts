@@ -170,6 +170,7 @@ Employer creates a salary stream and deposits funds into the contract escrow.
 | `deposit` | `i128` | Total tokens to lock in escrow |
 | `rate_per_second` | `i128` | Tokens streamed per second |
 | `stop_time` | `u64` | Hard stop timestamp (0 = indefinite) |
+| `low_balance_threshold` | `Option<i128>` | Emit a `low_bal` event after any withdraw that leaves less than this remaining (`None`/0 = disabled) |
 
 **Returns:** `u64` — the new stream ID
 
@@ -192,7 +193,8 @@ stellar contract invoke --id <STREAM_ID> --source <EMPLOYER_KEY> --network testn
     --token_address <TOKEN_ID> \
     --deposit 1000000 \
     --rate_per_second 100 \
-    --stop_time 0
+    --stop_time 0 \
+    --low_balance_threshold 100000
 ```
 
 ---
@@ -535,6 +537,7 @@ Read the full state of a stream by ID.
 | `last_withdraw_time` | `u64` | Timestamp of last withdrawal or resume |
 | `status` | `StreamStatus` | Active / Paused / Cancelled / Exhausted |
 | `locked` | `bool` | Reentrancy guard (always false at rest) |
+| `low_balance_threshold` | `i128` | Remaining-deposit threshold for the `low_bal` event (0 = disabled) |
 
 **Errors:**
 - Panics if stream not found
@@ -543,6 +546,30 @@ Read the full state of a stream by ID.
 ```bash
 stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
   -- get_stream --stream_id 1
+```
+
+---
+
+### `get_streams_batch`
+
+Read the full state of up to 50 streams in a single call. Lets off-chain dashboards replace N `get_stream` calls with one.
+
+**Caller:** Anyone
+
+| Parameter | Type | Description |
+|---|---|---|
+| `stream_ids` | `Vec<u64>` | IDs of the streams to read (max 50) |
+
+**Returns:** `Vec<Stream>` — streams in the same order as `stream_ids`
+
+**Errors:**
+- Panics if `stream_ids` has more than 50 entries
+- Panics if any stream ID is not found (consistent with `get_stream`)
+
+**Example:**
+```bash
+stellar contract invoke --id <STREAM_ID> --source <ANY_KEY> --network testnet \
+  -- get_streams_batch --stream_ids '[1, 2, 3]'
 ```
 
 ---
@@ -1109,6 +1136,22 @@ stellar contract invoke --id <TOKEN_ID> --source <NEW_ADMIN_KEY> --network testn
 
 ---
 
+### `upgrade` (token)
+
+```rust
+fn upgrade(env: Env, new_wasm_hash: BytesN<32>, nonce: u64)
+```
+
+Admin replaces the token WASM in-place; balances and total supply are preserved. Requires admin auth; panics with `invalid nonce` if `nonce` ≠ `admin_nonce()`.
+
+### `migrate` (token)
+
+```rust
+fn migrate(env: Env, admin: Address)
+```
+
+Post-upgrade no-op hook. Requires `admin` auth and that it matches the stored admin.
+
 ### `burn`
 
 Burn tokens from the caller's own balance, reducing total supply.
@@ -1195,6 +1238,22 @@ Emitted by `update_rate` when the employer changes the stream's `rate_per_second
 
 **Topics:** `("rate_upd", stream_id)`
 **Data:** `(old_rate, new_rate)`
+
+---
+
+### `low_balance`
+
+Emitted by `withdraw` when the stream's remaining deposit (`deposit - withdrawn`) falls below its non-zero `low_balance_threshold`. Off-chain systems can subscribe to this event to alert the employer to top up. The threshold is set via `create_stream` and can be changed via `top_up`.
+
+| Field | Type | Description |
+|---|---|---|
+| `stream_id` | `u64` | ID of the stream (in topics) |
+| `employer` | `Address` | Employer to notify |
+| `remaining` | `i128` | Deposit remaining after the withdraw |
+| `threshold` | `i128` | The stream's `low_balance_threshold` |
+
+**Topics:** `("low_bal", stream_id)`
+**Data:** `(employer, remaining, threshold)`
 
 ---
 
